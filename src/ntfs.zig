@@ -13,7 +13,7 @@ pub const NTFS = struct {
     pub const Error =
         Allocator.Error
         || std.fs.File.ReadError
-        || error{ NotFAT32, InvalidJmpBoot };
+        || error{ NotNTFS, InvalidJmpBoot };
 
     pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
         const buf = try alloc.alloc(u8, 10_000);

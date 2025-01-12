@@ -8,12 +8,12 @@ pub const FilesystemHandler = struct {
     alloc: Allocator,
     file: std.fs.File,
     reader: Reader,
-    buf: []u8,
 
     const Self = @This();
 
     const Error =
         FAT32.Error
+        || NTFS.Error
         || Allocator.Error
         || std.fs.File.ReadError
         || std.fs.File.OpenError
@@ -27,13 +27,11 @@ pub const FilesystemHandler = struct {
             .alloc = alloc,
             .file = f,
             .reader = b_reader,
-            .buf = try alloc.alloc(u8, 10_000),
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.file.close();
-        self.alloc.free(self.buf);
         self.* = undefined;
     }
 
@@ -43,8 +41,17 @@ pub const FilesystemHandler = struct {
         // ext4: EXT4,
         // ext3: EXT3,
         // ext2: EXT2,
+
+        pub fn deinit(self: *Filesystem) void {
+            switch (self.*) {
+                .fat32 => |*fat32| fat32.deinit(),
+                .ntfs => |*ntfs| ntfs.deinit(),
+            }
+            self.* = undefined;
+        }
     };
 
+    /// Caller must call deinit on result
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
         if (FAT32.init(self.alloc, &self.reader)) |fat32| return .{ .fat32 = fat32 } else |_| {}
         if (NTFS.init(self.alloc, &self.reader)) |ntfs| return .{ .ntfs = ntfs } else |_| {}

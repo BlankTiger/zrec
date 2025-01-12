@@ -20,10 +20,10 @@ pub fn main() !void {
     assert(args.len > 1);
     const path = args[1];
 
-    var mem_handler = try FilesystemHandler.init(arena, path);
-    defer mem_handler.deinit();
+    var fs_handler = try FilesystemHandler.init(arena, path);
+    defer fs_handler.deinit();
 
-    const fs = mem_handler.determine_filesystem() catch |err| {
+    var fs = fs_handler.determine_filesystem() catch |err| {
         switch (err) {
             error.NoFilesystemMatch =>
                 log.err("No filesystem matches image that was passed into the program", .{}),
@@ -31,6 +31,7 @@ pub fn main() !void {
         }
         return err;
     };
+    defer fs.deinit();
     switch (fs) {
         .fat32 => |fat32| {
             log.debug("fat32 filesystem found", .{});
