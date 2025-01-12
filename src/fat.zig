@@ -1,20 +1,29 @@
 const std = @import("std");
+const Reader = @import("reader.zig").Reader;
 const assert = std.debug.assert;
+const Allocator = std.mem.Allocator;
 
 pub const FAT32 = struct {
+    alloc: Allocator,
+    reader: *Reader,
+    buf: []u8,
     filesystem: []u8,
     boot_sector: BootSector,
     bios_parameter_block: BIOSParameterBlock,
 
-    pub const Error = error{
-        TooSmall,
-        NotFAT32,
-        InvalidJmpBoot,
-    };
+    const Self = @This();
 
-    pub fn init(mem: []u8) Error!FAT32 {
+    pub const Error =
+        Allocator.Error
+        || std.fs.File.ReadError
+        || error{ NotFAT32, InvalidJmpBoot };
+
+    pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
+        const buf = try alloc.alloc(u8, 10*512);
+        const read = try reader.read(buf);
         // should at least have 9 sectors of 512 bytes each
-        if (mem.len < 512*9) return error.TooSmall;
+        assert(read > 9*512);
+        const mem = buf[0..read];
 
         const bs = try parse_boot_sector(mem[0..11], mem[64..]);
         const bpb = try parse_bios_parameter_block(mem[11..64]);
@@ -24,14 +33,22 @@ pub const FAT32 = struct {
         const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
         const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
         if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
-        std.log.debug("count_of_clusters: {d}\n", .{count_of_clusters});
-        std.log.debug("bytes_per_sector: {d}\n", .{bpb.bytes_per_sector});
+        std.log.debug("count_of_clusters: {d}", .{count_of_clusters});
+        std.log.debug("bytes_per_sector: {d}", .{bpb.bytes_per_sector});
 
-        return FAT32 {
+        return Self {
+            .alloc = alloc,
+            .reader = reader,
+            .buf = buf,
             .filesystem = mem,
             .boot_sector = bs,
             .bios_parameter_block = bpb,
         };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.alloc.free(self.buf);
+        self.* = undefined;
     }
 
     fn parse_boot_sector(first_part: *[11]u8, second_part: []u8) !BootSector {
