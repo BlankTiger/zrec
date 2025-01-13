@@ -6,8 +6,9 @@ const NTFS = @import("ntfs.zig").NTFS;
 
 pub const FilesystemHandler = struct {
     alloc: Allocator,
-    file: std.fs.File,
-    reader: Reader,
+    path: []const u8,
+    files: std.ArrayList(*std.fs.File),
+    readers: std.ArrayList(*Reader),
 
     const Self = @This();
 
@@ -20,18 +21,23 @@ pub const FilesystemHandler = struct {
         || error{ NoFilesystemMatch };
 
     pub fn init(alloc: Allocator, filepath: []u8) Error!Self {
-        const f = try std.fs.cwd().openFile(filepath, .{});
-        const f_reader = f.reader();
-        const b_reader = std.io.bufferedReader(f_reader);
         return Self {
             .alloc = alloc,
-            .file = f,
-            .reader = b_reader,
+            .path = try alloc.dupe(u8, filepath),
+            .files = std.ArrayList(*std.fs.File).init(alloc),
+            .readers = std.ArrayList(*Reader).init(alloc),
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.file.close();
+        self.alloc.free(self.path);
+        for (self.files.items) |f| {
+            f.close();
+            self.alloc.destroy(f);
+        }
+        self.files.deinit();
+        for (self.readers.items) |r| self.alloc.destroy(r);
+        self.readers.deinit();
         self.* = undefined;
     }
 
@@ -51,11 +57,22 @@ pub const FilesystemHandler = struct {
         }
     };
 
-    /// Caller must call deinit on result
+    /// Caller must call deinit on the resulting Filesystem
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
-        if (FAT32.init(self.alloc, &self.reader)) |fat32| return .{ .fat32 = fat32 } else |_| {}
-        if (NTFS.init(self.alloc, &self.reader)) |ntfs| return .{ .ntfs = ntfs } else |_| {}
+        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
+        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
         return Error.NoFilesystemMatch;
+    }
+
+    fn create_new_reader(self: *Self) Error!*Reader {
+        const f = try self.alloc.create(std.fs.File);
+        f.* = try std.fs.cwd().openFile(self.path, .{});
+        try self.files.append(f);
+        const r = f.reader();
+        const br = try self.alloc.create(Reader);
+        br.* = std.io.bufferedReader(r);
+        try self.readers.append(br);
+        return br;
     }
 };
 

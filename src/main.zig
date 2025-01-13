@@ -17,6 +17,7 @@ pub fn main() !void {
     const arena = arena_state.allocator();
 
     const args = try std.process.argsAlloc(arena);
+    defer std.process.argsFree(arena, args);
     assert(args.len > 1);
     const path = args[1];
 
