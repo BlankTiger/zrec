@@ -7,8 +7,8 @@ const NTFS = @import("ntfs.zig").NTFS;
 pub const FilesystemHandler = struct {
     alloc: Allocator,
     path: []const u8,
-    files: std.ArrayList(*std.fs.File),
-    readers: std.ArrayList(*Reader),
+    _files: std.ArrayList(*std.fs.File),
+    _readers: std.ArrayList(*Reader),
 
     const Self = @This();
 
@@ -24,20 +24,20 @@ pub const FilesystemHandler = struct {
         return Self {
             .alloc = alloc,
             .path = try alloc.dupe(u8, filepath),
-            .files = std.ArrayList(*std.fs.File).init(alloc),
-            .readers = std.ArrayList(*Reader).init(alloc),
+            ._files = std.ArrayList(*std.fs.File).init(alloc),
+            ._readers = std.ArrayList(*Reader).init(alloc),
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.alloc.free(self.path);
-        for (self.files.items) |f| {
+        for (self._files.items) |f| {
             f.close();
             self.alloc.destroy(f);
         }
-        self.files.deinit();
-        for (self.readers.items) |r| self.alloc.destroy(r);
-        self.readers.deinit();
+        self._files.deinit();
+        for (self._readers.items) |r| self.alloc.destroy(r);
+        self._readers.deinit();
         self.* = undefined;
     }
 
@@ -67,11 +67,11 @@ pub const FilesystemHandler = struct {
     fn create_new_reader(self: *Self) Error!*Reader {
         const f = try self.alloc.create(std.fs.File);
         f.* = try std.fs.cwd().openFile(self.path, .{});
-        try self.files.append(f);
+        try self._files.append(f);
         const r = f.reader();
         const br = try self.alloc.create(Reader);
         br.* = std.io.bufferedReader(r);
-        try self.readers.append(br);
+        try self._readers.append(br);
         return br;
     }
 };
