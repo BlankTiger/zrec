@@ -112,6 +112,7 @@ fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
     return true;
 }
 
+// TODO: move this to fat.zig and make it more fat32 specific
 test "fresh fat32 is read as expected with all backup info in sector 6" {
     var fs_handler = try FilesystemHandler.init(t_alloc, FAT32_PATH);
     defer fs_handler.deinit();
