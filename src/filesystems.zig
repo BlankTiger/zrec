@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Reader = @import("reader.zig").Reader;
-const FAT32 = @import("fat.zig").FAT32;
-const NTFS = @import("ntfs.zig").NTFS;
+const FAT32 = @import("filesystems/fat.zig").FAT32;
+const NTFS = @import("filesystems/ntfs.zig").NTFS;
 
 pub const FilesystemHandler = struct {
     alloc: Allocator,
@@ -20,7 +20,7 @@ pub const FilesystemHandler = struct {
         || std.fs.File.OpenError
         || error{ NoFilesystemMatch };
 
-    pub fn init(alloc: Allocator, filepath: []u8) Error!Self {
+    pub fn init(alloc: Allocator, filepath: []const u8) Error!Self {
         return Self {
             .alloc = alloc,
             .path = try alloc.dupe(u8, filepath),
@@ -64,7 +64,7 @@ pub const FilesystemHandler = struct {
         return Error.NoFilesystemMatch;
     }
 
-    fn create_new_reader(self: *Self) Error!*Reader {
+    pub fn create_new_reader(self: *Self) Error!*Reader {
         const f = try self.alloc.create(std.fs.File);
         f.* = try std.fs.cwd().openFile(self.path, .{});
         try self._files.append(f);
@@ -76,3 +76,55 @@ pub const FilesystemHandler = struct {
     }
 };
 
+const testing = std.testing;
+const t_alloc = testing.allocator;
+const assert = std.debug.assert;
+const FAT32_PATH = "./filesystems/fat32_filesystem.img";
+const log = std.log;
+
+fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
+    const T = @TypeOf(a);
+
+    inline for (@typeInfo(T).Struct.fields) |field_info| {
+        const f_name = field_info.name;
+        const f_a = @field(a, f_name);
+        const f_b = @field(b, f_name);
+        const f_info = @typeInfo(@TypeOf(f_a));
+        // std.debug.print("type tag: {s}\n", .{@tagName(f_info)});
+        // @compileLog("type tag: " ++ @tagName(f_info));
+
+        switch (f_info) {
+            .Pointer => {
+                if (!std.mem.eql(u8, f_a, f_b)) {
+                    std.debug.print("a: {any} and b: {any} dont match on {s}\n", .{f_a, f_b, f_name});
+                    return false;
+                }
+            },
+            .Int => {
+                if (f_a != f_b) {
+                    std.debug.print("a: {any} and b: {any} dont match on {s}\n", .{f_a, f_b, f_name});
+                    return false;
+                }
+            },
+            else => unreachable
+        }
+    }
+    return true;
+}
+
+test "fresh fat32 is read as expected with all backup info in sector 6" {
+    var fs_handler = try FilesystemHandler.init(t_alloc, FAT32_PATH);
+    defer fs_handler.deinit();
+    var fs = try fs_handler.determine_filesystem();
+    defer fs.deinit();
+
+    switch (fs) {
+        .fat32 => |fat32| {
+            const bkp_bs = try fat32.get_backup_boot_sector();
+            const bkp_bpb = fat32.get_backup_bios_parameter_block();
+            assert(custom_slice_and_int_eql(fat32.boot_sector, bkp_bs));
+            assert(custom_slice_and_int_eql(fat32.bios_parameter_block, bkp_bpb));
+        },
+        else => unreachable
+    }
+}

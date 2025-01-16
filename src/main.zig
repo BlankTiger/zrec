@@ -1,11 +1,12 @@
 const std = @import("std");
 const log = std.log;
 const assert = std.debug.assert;
-const FilesystemHandler = @import("filesystem_handler.zig").FilesystemHandler;
+const Allocator = std.mem.Allocator;
 
-fn is_jpeg(bytes: [3]u8) bool {
-    return std.mem.eql(u8, bytes, &[3]u8{ 0xff, 0xd8, 0xff });
-}
+const lib = @import("lib.zig");
+const Reader = lib.Reader;
+const JPEG = lib.JPEG;
+const FilesystemHandler = lib.FilesystemHandler;
 
 pub fn main() !void {
     // var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
@@ -35,10 +36,25 @@ pub fn main() !void {
     defer fs.deinit();
     switch (fs) {
         .fat32 => |fat32| {
+            const bkp_bpb = fat32.get_backup_bios_parameter_block();
+            const bkp_bs = try fat32.get_backup_boot_sector();
             log.debug("fat32 filesystem found", .{});
             log.debug("jmp_boot: {X}", .{fat32.boot_sector.jmp_boot});
             log.debug("bytes_per_sector: {d}", .{fat32.bios_parameter_block.bytes_per_sector});
             log.debug("sectors_per_cluster: {d}", .{fat32.bios_parameter_block.sectors_per_cluster});
+            log.debug("fat_size: {d}", .{fat32.bios_parameter_block.fat_size_32});
+            log.debug("fat_offset for cluster 0: {d}", .{0 * 4});
+            log.debug("fat 0 sector num: {d}", .{fat32.bios_parameter_block.reserved_sector_count + (0 / fat32.bios_parameter_block.bytes_per_sector)});
+            log.debug("fat entry offset: {d}", .{try std.math.rem(u16, 0*4, fat32.bios_parameter_block.bytes_per_sector)});
+
+            log.debug("bkp jmp_boot: {X}", .{bkp_bs.jmp_boot});
+            log.debug("bkp bytes_per_sector: {d}", .{bkp_bpb.bytes_per_sector});
+            log.debug("bkp sectors_per_cluster: {d}", .{bkp_bpb.sectors_per_cluster});
+            log.debug("below prints should have identical mem printed", .{});
+
+            log.debug("some mem sector 0: {any}", .{fat32.buf[0..100]});
+            log.debug("some mem sector 6: {any}", .{fat32.buf[6*512..6*512+100]});
+            log.debug("eql = {any}", .{std.mem.eql(u8, fat32.buf[0..100], fat32.buf[6*512..6*512+100])});
         },
         .ntfs => |ntfs| {
             log.debug("ntfs filesystem found", .{});

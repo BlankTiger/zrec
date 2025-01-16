@@ -1,5 +1,5 @@
 const std = @import("std");
-const Reader = @import("reader.zig").Reader;
+const Reader = @import("../reader.zig").Reader;
 const Allocator = std.mem.Allocator;
 
 pub const NTFS = struct {

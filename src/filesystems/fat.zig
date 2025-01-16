@@ -1,5 +1,5 @@
 const std = @import("std");
-const Reader = @import("reader.zig").Reader;
+const Reader = @import("../reader.zig").Reader;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
@@ -12,6 +12,10 @@ pub const FAT32 = struct {
     bios_parameter_block: BIOSParameterBlock,
 
     const Self = @This();
+    const SECTOR_SIZE = 512;
+    const BPB_START_OFFSET = 11;
+    const BPB_END_OFFSET = 64;
+    const SIZE_OF_BPB = BPB_END_OFFSET - BPB_START_OFFSET;
 
     pub const Error =
         Allocator.Error
@@ -22,11 +26,11 @@ pub const FAT32 = struct {
         const buf = try alloc.alloc(u8, 10*512);
         const read = try reader.read(buf);
         // should at least have 9 sectors of 512 bytes each
-        assert(read > 9*512);
+        assert(read > 9*SECTOR_SIZE);
         const mem = buf[0..read];
 
-        const bs = try parse_boot_sector(mem[0..11], mem[64..]);
-        const bpb = try parse_bios_parameter_block(mem[11..64]);
+        const bs = try parse_boot_sector(mem[0..BPB_START_OFFSET], mem[BPB_END_OFFSET..]);
+        const bpb = parse_bios_parameter_block(mem[BPB_START_OFFSET..64]);
         const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
         const fat_size = bpb.fat_size_32;
         const total_sectors = bpb.total_sectors_32;
@@ -70,7 +74,7 @@ pub const FAT32 = struct {
         };
     }
 
-    fn parse_bios_parameter_block(mem: *[64-11]u8) !BIOSParameterBlock {
+    fn parse_bios_parameter_block(mem: *[SIZE_OF_BPB]u8) BIOSParameterBlock {
         return BIOSParameterBlock {
             .bytes_per_sector = read_u16(mem[0..2]),
             .sectors_per_cluster = mem[2],
@@ -100,6 +104,17 @@ pub const FAT32 = struct {
 
     fn read_u32(mem: *[4]u8) u32 {
         return std.mem.readInt(u32, mem, .little);
+    }
+
+    pub fn get_backup_boot_sector(self: Self) !BootSector {
+        const mem_part1 = self.buf[6*SECTOR_SIZE..6*SECTOR_SIZE + BPB_START_OFFSET];
+        const mem_part2 = self.buf[6*SECTOR_SIZE + BPB_END_OFFSET..];
+        return try parse_boot_sector(mem_part1, mem_part2);
+    }
+
+    pub fn get_backup_bios_parameter_block(self: Self) BIOSParameterBlock {
+        const mem = self.buf[6*SECTOR_SIZE + BPB_START_OFFSET..6*SECTOR_SIZE + BPB_START_OFFSET + SIZE_OF_BPB];
+        return parse_bios_parameter_block(mem);
     }
 
     /// All fields are sequential on disk from byte offset 0
