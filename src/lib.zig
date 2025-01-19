@@ -1,3 +1,4 @@
+const std = @import("std");
 const filesystems = @import("filesystems.zig");
 const filetypes = @import("filetypes.zig");
 const reader = @import("reader.zig");
@@ -8,5 +9,5 @@ pub const JPGRecoverer = filetypes.JPGRecoverer;
 pub const PNGRecoverer = filetypes.PNGRecoverer;
 
 test {
-    @import("std").testing.refAllDecls(@This());
+    std.testing.refAllDecls(@This());
 }
