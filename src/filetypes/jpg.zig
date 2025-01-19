@@ -141,28 +141,14 @@ const Tests = struct {
     const testing = std.testing;
     const t_alloc = testing.allocator;
     const FsHandler = @import("../filesystems.zig").FilesystemHandler;
-
-    fn testing_fs_handler() !FsHandler {
-        const FAT32_PATH = "./filesystems/fat32_filesystem.img";
-        return try FsHandler.init(t_alloc, FAT32_PATH);
-    }
-
-    fn testing_original_jpg_data(path: []const u8) ![]u8 {
-        const original_jpg = try std.fs.cwd().openFile(path, .{});
-        defer original_jpg.close();
-        const original_data = try original_jpg.readToEndAlloc(t_alloc, 10e6);
-        return original_data;
-    }
-
-    const Sha1 = std.crypto.hash.Sha1;
-    const Hashes = std.StringHashMap(void);
-
-    fn hash(data: []u8) ![]u8 {
-        const hash_ptr = try t_alloc.alloc(u8, Sha1.digest_length);
-        Sha1.hash(data, hash_ptr[0..Sha1.digest_length], .{});
-        log.debug("hash: {any}", .{hash_ptr});
-        return hash_ptr;
-    }
+    const utils = @import("testing_utils.zig");
+    const testing_fs_handler = utils.testing_fs_handler;
+    const testing_original_data = utils.testing_original_data;
+    const hash = utils.hash;
+    const Hashes = utils.Hashes;
+    const cleanup_hashes = utils.cleanup_hashes;
+    const dbg_eql = utils.dbg_eql;
+    const tlog = std.log.scoped(.jpg_tests);
 
     const TestExample = enum {
         @"input/example1.jpg",
@@ -184,42 +170,25 @@ const Tests = struct {
         fn hashes() !Hashes {
             var hs = Hashes.init(t_alloc);
             for (paths) |p| {
-                const data = try testing_original_jpg_data(p);
+                const data = try testing_original_data(p);
                 defer t_alloc.free(data);
                 const hash_ptr = try hash(data);
                 try hs.put(hash_ptr, {});
             }
             return hs;
         }
-
-        fn cleanup_hashes(h: *Hashes) void {
-            var k_it = h.keyIterator();
-            while (k_it.next()) |k| t_alloc.free(k.*);
-            h.deinit();
-        }
     };
 
-    fn dbg_eql(data_a: []const u8, data_b: []const u8) bool {
-        log.debug("a_len: {d}, b_len: {d}", .{data_a.len, data_b.len});
-        for (data_a, data_b, 0..) |a, b, idx| {
-            if (a != b) {
-                log.debug("a and b dont match at {d}: {d} != {d}", .{idx, a, b});
-                return false;
-            }
-        }
-        return true;
-    }
-
     test "jpgs read straight from the disk are interpreted via reader as the same imgs" {
-        for (TestExample.paths) |p| {
-            log.debug("file: {s}", .{p});
+        inline for (TestExample.paths) |p| {
+            tlog.debug("file: {s}", .{p});
             var orig_mem_data: []u8 = undefined;
             defer t_alloc.free(orig_mem_data);
             {
                 const f = try std.fs.cwd().openFile(p, .{});
                 defer f.close();
                 orig_mem_data = try f.readToEndAlloc(t_alloc, 20e6);
-                log.debug("orig_mem_data_len: {d}", .{orig_mem_data.len});
+                tlog.debug("orig_mem_data_len: {d}", .{orig_mem_data.len});
             }
             {
                 const f = try std.fs.cwd().openFile(p, .{});
@@ -227,10 +196,10 @@ const Tests = struct {
                 var reader = Reader.init(&f);
                 var jpg_r = JPGRecoverer.init(t_alloc, &reader);
                 var jpg = (try jpg_r.find_next()).?;
-                log.debug("recovered_data_len: {d}", .{jpg.data.len});
+                tlog.debug("recovered_data_len: {d}", .{jpg.data.len});
                 defer jpg.deinit();
 
-                try expect(dbg_eql(orig_mem_data, jpg.data));
+                try dbg_eql(orig_mem_data, jpg.data, p);
             }
         }
     }
@@ -248,26 +217,14 @@ const Tests = struct {
 
     test "recover jpg from fat32, verify using sha1" {
         var hashes = try TestExample.hashes();
-        defer TestExample.cleanup_hashes(&hashes);
+        defer cleanup_hashes(&hashes);
         var fs_handler = try testing_fs_handler();
         defer fs_handler.deinit();
 
         const reader = try fs_handler.create_new_reader();
         var jpg_r = JPGRecoverer.init(t_alloc, reader);
 
-        var output_paths: [TestExample.paths.len][]const u8 = undefined;
-        if (testing.log_level == .debug) {
-            inline for (TestExample.paths, 0..) |p, idx| {
-                comptime var path_part: []const u8 = undefined;
-                comptime {
-                    var path_iter = std.mem.splitSequence(u8, p, "/");
-                    assert(path_iter.next() != null);
-                    path_part = path_iter.next().?;
-                }
-                const path = "output/" ++ path_part;
-                output_paths[idx] = path;
-            }
-        }
+        const output_paths = utils.calc_output_paths(TestExample.paths.len, TestExample.paths);
 
         for (output_paths) |op| {
             const jpg = (try jpg_r.find_next()).?;
