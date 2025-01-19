@@ -68,11 +68,10 @@ pub const FilesystemHandler = struct {
         const f = try self.alloc.create(std.fs.File);
         f.* = try std.fs.cwd().openFile(self.path, .{});
         try self._files.append(f);
-        const r = f.reader();
-        const br = try self.alloc.create(Reader);
-        br.* = std.io.bufferedReader(r);
-        try self._readers.append(br);
-        return br;
+        const custom_reader = try self.alloc.create(Reader);
+        custom_reader.* = Reader.init(f);
+        try self._readers.append(custom_reader);
+        return custom_reader;
     }
 };
 

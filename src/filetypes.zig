@@ -1,3 +1,3 @@
-const jpeg = @import("filetypes/jpeg.zig");
+const jpg = @import("filetypes/jpg.zig");
 
-pub const JPEG = jpeg.JPEG;
+pub const JPGRecoverer = jpg.JPGRecoverer;

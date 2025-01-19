@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 
 const lib = @import("lib.zig");
 const Reader = lib.Reader;
-const JPEG = lib.JPEG;
+const JPEGRecoverer = lib.JPG;
 const FilesystemHandler = lib.FilesystemHandler;
 
 pub fn main() !void {

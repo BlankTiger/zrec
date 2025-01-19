@@ -4,7 +4,7 @@ const reader = @import("reader.zig");
 
 pub const FilesystemHandler = filesystems.FilesystemHandler;
 pub const Reader = reader.Reader;
-pub const JPEG = filetypes.JPEG;
+pub const JPGRecoverer = filetypes.JPGRecoverer;
 
 test {
     @import("std").testing.refAllDecls(@This());
