@@ -12,6 +12,7 @@ pub fn build(b: *std.Build) void {
     const clean = clean_step(b);
     const create_fs = create_filesystems_step(b);
     test_step(b, clean, create_fs);
+    bench_step(b, clean, create_fs);
     build_and_run_step(b);
 }
 
@@ -66,6 +67,20 @@ fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) 
     test_s.dependOn(create_fs);
     test_s.dependOn(&run_exe_unit_tests.step);
     test_s.dependOn(&run_lib_unit_tests.step);
+}
+
+fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {
+    const bench_s = b.step("bench", "Run benchmarks");
+    const exe_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/benchmarks/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+
+    bench_s.dependOn(clean);
+    bench_s.dependOn(create_fs);
+    bench_s.dependOn(&run_exe_unit_tests.step);
 }
 
 fn clean_step(b: *std.Build) *std.Build.Step {
