@@ -32,12 +32,95 @@ pub const Reader = struct {
     }
 };
 
+pub const MmapReader = struct {
+    mem: []u8,
+    idx: usize = 0,
+
+    const Self = @This();
+    const l = std.os.linux;
+    pub fn init(file: *const std.fs.File) !Self {
+        errdefer file.close();
+        const fd = file.handle;
+        var stats: l.Stat = undefined;
+        const stat_res = l.fstat(fd, &stats);
+        if (stat_res != 0) return error.FstatErrorForFile;
+
+        const len: usize = @intCast(stats.size);
+        const ptr = l.mmap(null, len, l.PROT.READ, .{ .TYPE = l.MAP_TYPE.SHARED }, fd, 0);
+        if (ptr == 0) return error.MmapFailed;
+        file.close();
+        const mem = @as([*]u8, @ptrFromInt(ptr))[0..len];
+        return Self {
+            .mem = mem,
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        _ = l.munmap(@ptrCast(self.mem), self.mem.len);
+    }
+
+    pub fn read(self: *Self, dest: []u8) !usize {
+        if (self.idx > self.mem.len) return 0;
+
+        if (self.mem.len < self.idx + dest.len) {
+            const bytes_left = self.mem.len - self.idx;
+            @memcpy(dest[0..bytes_left], self.mem[self.idx..self.idx+bytes_left]);
+            self.idx += bytes_left;
+            return bytes_left;
+        }
+
+        log.debug("{d}, {d}", .{dest.len, self.mem[self.idx..self.idx+dest.len].len});
+        @memcpy(dest, self.mem[self.idx..self.idx+dest.len]);
+        self.idx += dest.len;
+        return dest.len;
+    }
+
+    pub fn seek_by(self: *Self, offset: i64) !void {
+        const _idx: i64 = @intCast(self.idx);
+        if (_idx + offset < 0) self.idx = 0;
+        if (_idx + offset > self.mem.len) self.idx = self.mem.len;
+        self.idx = @intCast(_idx + offset);
+    }
+};
+
 test {
     std.testing.refAllDecls(Tests);
 }
 
 const Tests = struct {
     const expect = std.testing.expect;
+
+    test "MmapReader read full fat32 image, result should be equivalent to reading via read system calls, seeking works too" {
+        const path = "filesystems/fat32_filesystem.img";
+        var read_call_buf: [512]u8 = undefined;
+        var mmap_call_buf: [512]u8 = undefined;
+        const f_read = try std.fs.cwd().openFile(path, .{});
+        const f_mmap = try std.fs.cwd().openFile(path, .{});
+        var reader_read = Reader.init(&f_read);
+        defer reader_read.deinit();
+        var reader_mmap = try MmapReader.init(&f_mmap);
+        defer reader_mmap.deinit();
+
+        var bytes_read_read = try reader_read.read(&read_call_buf);
+        var bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
+        try expect(bytes_read_read == bytes_read_mmap);
+        try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+        while (bytes_read_read > 0) {
+            bytes_read_read = try reader_read.read(&read_call_buf);
+            bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
+            try expect(bytes_read_read == bytes_read_mmap);
+            try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+        }
+
+        try reader_read.seek_by(-1000);
+        try reader_mmap.seek_by(-1000);
+        while (bytes_read_read > 0) {
+            bytes_read_read = try reader_read.read(&read_call_buf);
+            bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
+            try expect(bytes_read_read == bytes_read_mmap);
+            try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+        }
+    }
 
     test "reader can go back by using seek_by on underlying file" {
         const path = "temp_reader_test_file";
