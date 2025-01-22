@@ -9,4 +9,5 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
-      - run: zig build bench --summary all
+      - run: zig build bench -Doptimize=Debug --summary all
+      - run: zig build bench -Doptimize=ReleaseSafe --summary all

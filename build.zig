@@ -25,6 +25,12 @@ fn build_and_run_step(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe.root_module.addImport("zrec", mod);
     b.installArtifact(exe);
 
     const build_lib = b.option(bool, "build_lib", "Build a static library") orelse false;
@@ -55,6 +61,12 @@ fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) 
         .target = target,
         .optimize = optimize,
     });
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_unit_tests.root_module.addImport("zrec", mod);
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
@@ -76,6 +88,12 @@ fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step)
         .target = target,
         .optimize = optimize,
     });
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_unit_tests.root_module.addImport("zrec", mod);
     const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
 
     bench_s.dependOn(clean);

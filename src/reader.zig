@@ -11,6 +11,7 @@ pub const Reader = struct {
     // reader: BufferedReader,
 
     const Self = @This();
+
     pub fn init(file: *const std.fs.File) Self {
         const reader = file.reader();
         return Self {
@@ -34,6 +35,7 @@ pub const Reader = struct {
 
 pub const MmapReader = struct {
     mem: []u8,
+    mem_shared: bool = false,
     idx: usize = 0,
 
     const Self = @This();
@@ -55,8 +57,15 @@ pub const MmapReader = struct {
         };
     }
 
+    pub fn init_with_mem(mem: []u8) Self {
+        return .{
+            .mem = mem,
+            .mem_shared = true,
+        };
+    }
+
     pub fn deinit(self: Self) void {
-        _ = l.munmap(@ptrCast(self.mem), self.mem.len);
+        if (!self.mem_shared) _ = l.munmap(@ptrCast(self.mem), self.mem.len);
     }
 
     pub fn read(self: *Self, dest: []u8) !usize {

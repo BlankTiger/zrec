@@ -3,7 +3,7 @@ const log = std.log;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
-const lib = @import("lib.zig");
+const lib = @import("zrec");
 const Reader = lib.Reader;
 const JPEGRecoverer = lib.JPG;
 const FilesystemHandler = lib.FilesystemHandler;
