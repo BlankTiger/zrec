@@ -1,7 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 const lib = @import("zrec");
-const reader = lib.reader;
+const ReadReader = lib.ReadReader;
+const MmapReader = lib.MmapReader;
 const log = std.log.scoped(.read_vs_mmap);
 const utils = @import("utils.zig");
 
@@ -22,7 +23,7 @@ fn run_read_reader(core_count: usize) !void {
 fn inner_read_reader() !void {
     var read_call_buf: [512]u8 = undefined;
     const f_read = try std.fs.cwd().openFile(path, .{});
-    var reader_read = reader.Reader.init(&f_read);
+    var reader_read = try ReadReader.init(&f_read);
     defer reader_read.deinit();
     var bytes_read_read = try reader_read.read(&read_call_buf);
     while (bytes_read_read > 0) {
@@ -45,7 +46,7 @@ fn run_mmap_reader(core_count: usize) !void {
 fn inner_mmap_reader() !void {
     var mmap_cal_buf: [512]u8 = undefined;
     const f_mmap = try std.fs.cwd().openFile(path, .{});
-    var reader_mmap = try reader.MmapReader.init(&f_mmap);
+    var reader_mmap = try MmapReader.init(&f_mmap);
     defer reader_mmap.deinit();
     var bytes_read_mmap = try reader_mmap.read(&mmap_cal_buf);
     while (bytes_read_mmap > 0) {
@@ -59,7 +60,7 @@ fn run_mmap_reader_shared(core_count: usize) !void {
     const alloc = arena.allocator();
 
     const f_mmap = try std.fs.cwd().openFile(path, .{});
-    var reader_mmap = try reader.MmapReader.init(&f_mmap);
+    var reader_mmap = try MmapReader.init(&f_mmap);
     defer reader_mmap.deinit();
 
     const threads = try alloc.alloc(std.Thread, core_count);
@@ -69,9 +70,9 @@ fn run_mmap_reader_shared(core_count: usize) !void {
     for (threads) |t| t.join();
 }
 
-fn inner_mmap_reader_shared(mem: []u8) !void {
+fn inner_mmap_reader_shared(mem: MmapReader.MemT) !void {
     var mmap_cal_buf: [512]u8 = undefined;
-    var reader_mmap = reader.MmapReader.init_with_mem(mem);
+    var reader_mmap = MmapReader.init_with_mem(mem);
     var bytes_read_mmap = try reader_mmap.read(&mmap_cal_buf);
     while (bytes_read_mmap > 0) {
         bytes_read_mmap = try reader_mmap.read(&mmap_cal_buf);

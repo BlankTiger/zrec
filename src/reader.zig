@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = std.log.scoped(.reader);
 
-pub const Reader = struct {
+pub const ReadReader = struct {
     file: *const std.fs.File,
     reader: std.fs.File.Reader,
 
@@ -12,12 +12,9 @@ pub const Reader = struct {
 
     const Self = @This();
 
-    pub fn init(file: *const std.fs.File) Self {
+    pub fn init(file: *const std.fs.File) !Self {
         const reader = file.reader();
-        return Self {
-            .file = file,
-            .reader = reader,
-        };
+        return Self { .file = file, .reader = reader };
     }
 
     pub fn deinit(self: Self) void {
@@ -33,31 +30,27 @@ pub const Reader = struct {
     }
 };
 
+// TODO: make it work on windows
 pub const MmapReader = struct {
-    mem: []u8,
+    pub const MemT = []align(std.mem.page_size) u8;
+
+    mem: MemT,
     mem_shared: bool = false,
     idx: usize = 0,
 
     const Self = @This();
-    const l = std.os.linux;
-    pub fn init(file: *const std.fs.File) !Self {
-        errdefer file.close();
-        const fd = file.handle;
-        var stats: l.Stat = undefined;
-        const stat_res = l.fstat(fd, &stats);
-        if (stat_res != 0) return error.FstatErrorForFile;
+    const posix = std.posix;
 
+    pub fn init(file: *const std.fs.File) !Self {
+        defer file.close();
+        const fd = file.handle;
+        const stats = try posix.fstat(fd);
         const len: usize = @intCast(stats.size);
-        const ptr = l.mmap(null, len, l.PROT.READ, .{ .TYPE = l.MAP_TYPE.SHARED }, fd, 0);
-        if (ptr == 0) return error.MmapFailed;
-        file.close();
-        const mem = @as([*]u8, @ptrFromInt(ptr))[0..len];
-        return Self {
-            .mem = mem,
-        };
+        const mem = try posix.mmap(null, len, posix.PROT.READ, .{ .TYPE = posix.system.MAP_TYPE.SHARED }, fd, 0);
+        return Self { .mem = mem };
     }
 
-    pub fn init_with_mem(mem: []u8) Self {
+    pub fn init_with_mem(mem: MemT) Self {
         return .{
             .mem = mem,
             .mem_shared = true,
@@ -65,7 +58,7 @@ pub const MmapReader = struct {
     }
 
     pub fn deinit(self: Self) void {
-        if (!self.mem_shared) _ = l.munmap(@ptrCast(self.mem), self.mem.len);
+        if (!self.mem_shared) _ = posix.munmap(self.mem);
     }
 
     pub fn read(self: *Self, dest: []u8) !usize {
@@ -105,7 +98,7 @@ const Tests = struct {
         var mmap_call_buf: [512]u8 = undefined;
         const f_read = try std.fs.cwd().openFile(path, .{});
         const f_mmap = try std.fs.cwd().openFile(path, .{});
-        var reader_read = Reader.init(&f_read);
+        var reader_read = try ReadReader.init(&f_read);
         defer reader_read.deinit();
         var reader_mmap = try MmapReader.init(&f_mmap);
         defer reader_mmap.deinit();
@@ -147,7 +140,7 @@ const Tests = struct {
         {
             const f = try std.fs.cwd().openFile(path, .{});
             defer f.close();
-            var r = Reader.init(&f);
+            var r = try ReadReader.init(&f);
             const read_bytes1 = try r.read(&buf1);
             try r.seek_by(-@as(i64, @intCast(read_bytes1)));
             const read_bytes2 = try r.read(&buf2);
@@ -180,7 +173,7 @@ const Tests = struct {
         {
             const f = try std.fs.cwd().openFile(path, .{});
             defer f.close();
-            var r = Reader.init(&f);
+            var r = try ReadReader.init(&f);
             const read_bytes1 = try r.read(&buf1);
             try r.seek_by(-@as(i64, @intCast(read_bytes1)));
             const read_bytes2 = try r.read(&buf2);
@@ -220,7 +213,7 @@ const Tests = struct {
         {
             const f = try std.fs.cwd().openFile(path, .{});
             defer f.close();
-            var r = Reader.init(&f);
+            var r = try ReadReader.init(&f);
             const read_bytes = try r.read(&buf_all);
             try r.seek_by(-@as(i64, @intCast(read_bytes/2)));
 

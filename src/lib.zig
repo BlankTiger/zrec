@@ -1,12 +1,18 @@
 const std = @import("std");
 const filesystems = @import("filesystems.zig");
 const filetypes = @import("filetypes.zig");
-pub const reader = @import("reader.zig");
+const reader = @import("reader.zig");
 
-pub const FilesystemHandler = filesystems.FilesystemHandler;
-pub const Reader = reader.Reader;
+pub const ReadReader = reader.ReadReader;
+pub const MmapReader = reader.MmapReader;
+/// Choice of Reader over the application and tests is made here
+/// changing the line below should change implementation in all
+/// necessary places.
+pub const Reader = MmapReader;
 pub const JPGRecoverer = filetypes.JPGRecoverer;
 pub const PNGRecoverer = filetypes.PNGRecoverer;
+
+pub const FilesystemHandler = filesystems.FilesystemHandler;
 
 test {
     std.testing.refAllDecls(@This());

@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Reader = @import("../reader.zig").Reader;
+const lib = @import("../lib.zig");
+const Reader = lib.Reader;
 const log = std.log.scoped(.png);
 const assert = std.debug.assert;
 
@@ -203,8 +204,8 @@ const Tests = struct {
             }
             {
                 const f = try std.fs.cwd().openFile(p, .{});
-                defer f.close();
-                var reader = Reader.init(&f);
+                var reader = try Reader.init(&f);
+                defer reader.deinit();
                 var png_r = PNGRecoverer.init(t_alloc, &reader);
                 var png = (try png_r.find_next()).?;
                 tlog.debug("recovered_data_len: {d}", .{png.data.len});

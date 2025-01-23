@@ -1,7 +1,8 @@
 const std = @import("std");
 const log = std.log.scoped(.jpg);
 const Allocator = std.mem.Allocator;
-const Reader = @import("../lib.zig").Reader;
+const lib = @import("../lib.zig");
+const Reader = lib.Reader;
 const assert = std.debug.assert;
 
 pub const JPGRecoverer = struct {
@@ -29,6 +30,9 @@ pub const JPGRecoverer = struct {
 
     alloc: Allocator,
     reader: *Reader,
+    // /// directions on how to navigate the given reader
+    // /// example: 
+    // reader_map: ?*const ReaderMap = null,
     max_size: usize = 20e6,
     stride: usize = 512,
     debug: bool = false,
@@ -192,8 +196,8 @@ const Tests = struct {
             }
             {
                 const f = try std.fs.cwd().openFile(p, .{});
-                defer f.close();
-                var reader = Reader.init(&f);
+                var reader = try Reader.init(&f);
+                defer reader.deinit();
                 var jpg_r = JPGRecoverer.init(t_alloc, &reader);
                 var jpg = (try jpg_r.find_next()).?;
                 tlog.debug("recovered_data_len: {d}", .{jpg.data.len});

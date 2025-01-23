@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Reader = @import("reader.zig").Reader;
+const lib = @import("lib.zig");
+const Reader = lib.Reader;
 const FAT32 = @import("filesystems/fat.zig").FAT32;
 const NTFS = @import("filesystems/ntfs.zig").NTFS;
 
@@ -18,6 +19,7 @@ pub const FilesystemHandler = struct {
         || Allocator.Error
         || std.fs.File.ReadError
         || std.fs.File.OpenError
+        || std.posix.MMapError
         || error{ NoFilesystemMatch };
 
     pub fn init(alloc: Allocator, filepath: []const u8) Error!Self {
@@ -31,13 +33,15 @@ pub const FilesystemHandler = struct {
 
     pub fn deinit(self: *Self) void {
         self.alloc.free(self.path);
+        for (self._readers.items) |r| {
+            r.deinit();
+            self.alloc.destroy(r);
+        }
+        self._readers.deinit();
         for (self._files.items) |f| {
-            f.close();
             self.alloc.destroy(f);
         }
         self._files.deinit();
-        for (self._readers.items) |r| self.alloc.destroy(r);
-        self._readers.deinit();
         self.* = undefined;
     }
 
@@ -69,7 +73,7 @@ pub const FilesystemHandler = struct {
         f.* = try std.fs.cwd().openFile(self.path, .{});
         try self._files.append(f);
         const custom_reader = try self.alloc.create(Reader);
-        custom_reader.* = Reader.init(f);
+        custom_reader.* = try Reader.init(f);
         try self._readers.append(custom_reader);
         return custom_reader;
     }

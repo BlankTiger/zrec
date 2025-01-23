@@ -1,5 +1,6 @@
 const std = @import("std");
-const Reader = @import("../reader.zig").Reader;
+const lib = @import("../lib.zig");
+const Reader = lib.Reader;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 
