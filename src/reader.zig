@@ -1,4 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const posix = std.posix;
+const win = std.os.windows;
 const log = std.log.scoped(.reader);
 
 pub const ReadReader = struct {
@@ -11,8 +14,9 @@ pub const ReadReader = struct {
     // reader: BufferedReader,
 
     const Self = @This();
+    const Error = std.fs.File.ReadError || std.fs.File.SeekError;
 
-    pub fn init(file: *const std.fs.File) !Self {
+    pub fn init(file: *const std.fs.File) Error!Self {
         const reader = file.reader();
         return Self { .file = file, .reader = reader };
     }
@@ -30,7 +34,43 @@ pub const ReadReader = struct {
     }
 };
 
-// TODO: make it work on windows
+
+// TODO: make it work on windows, possibly a problem:
+// https://learn.microsoft.com/en-us/windows/win32/memory/creating-a-file-mapping-object
+// The size of a file mapping object that is backed by a named file is limited by disk space. The size of a file view is limited to the largest available contiguous block of unreserved virtual memory. This is at most 2 GB minus the virtual memory already reserved by the process.
+// on linux I think that there is no such limit as 2 GB, needs more testing too
+//
+// extern "kernel32" fn CreateFileMappingA(
+//     hFile: win.HANDLE,
+//     lpFileMappingAttributes: *const std.os.windows.SECURITY_ATTRIBUTES,
+//     flProtect: win.DWORD,
+//     dwMaximumSizeHigh: win.DWORD,
+//     dwMaximumSizeLow: win.DWORD,
+//     lpName: win.LPCSTR,
+// ) win.HANDLE;
+//
+// fn mmap(
+//     ptr: ?[*]align(std.mem.page_size) u8,
+//     length: usize,
+//     prot: u32,
+//     flags: posix.system.MAP,
+//     fd: posix.fd_t,
+//     offset: u64,
+// ) posix.MMapError!MmapReader.MemT {
+//     _ = offset;
+//     _ = fd;
+//     _ = flags;
+//     _ = prot;
+//     _ = length;
+//     _ = ptr;
+//
+//     switch (builtin.os.tag) {
+//         .linux => {},
+//         .windows => {},
+//         else => unreachable,
+//     }
+// }
+
 pub const MmapReader = struct {
     pub const MemT = []align(std.mem.page_size) u8;
 
@@ -39,14 +79,18 @@ pub const MmapReader = struct {
     idx: usize = 0,
 
     const Self = @This();
-    const posix = std.posix;
+    const Error = posix.MMapError || posix.FStatError;
 
-    pub fn init(file: *const std.fs.File) !Self {
+    pub fn init(file: *const std.fs.File) Error!Self {
         defer file.close();
         const fd = file.handle;
         const stats = try posix.fstat(fd);
         const len: usize = @intCast(stats.size);
-        const mem = try posix.mmap(null, len, posix.PROT.READ, .{ .TYPE = posix.system.MAP_TYPE.SHARED }, fd, 0);
+        const mem = switch (builtin.os.tag) {
+            .linux => try posix.mmap(null, len, posix.PROT.READ, .{ .TYPE = posix.system.MAP_TYPE.SHARED }, fd, 0),
+            .windows => try win.mmap(),
+            else => unreachable,
+        };
         return Self { .mem = mem };
     }
 

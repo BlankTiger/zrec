@@ -81,6 +81,7 @@ fn inner_mmap_reader_shared(mem: MmapReader.MemT) !void {
 
 const optimization_mode = @import("builtin").mode;
 
+// TODO: also test memory footprint
 test "single core" {
     const prev_log_level = testing.log_level;
     testing.log_level = .info;

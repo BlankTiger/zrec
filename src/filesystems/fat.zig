@@ -11,6 +11,7 @@ pub const FAT32 = struct {
     filesystem: []u8,
     boot_sector: BootSector,
     bios_parameter_block: BIOSParameterBlock,
+    fat: []FileAllocationTable,
 
     const Self = @This();
     const SECTOR_SIZE = 512;
@@ -40,6 +41,7 @@ pub const FAT32 = struct {
         if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
         std.log.debug("count_of_clusters: {d}", .{count_of_clusters});
         std.log.debug("bytes_per_sector: {d}", .{bpb.bytes_per_sector});
+        std.log.debug("root_cluster: {d}", .{bpb.bytes_per_sector});
 
         return Self {
             .alloc = alloc,
@@ -54,6 +56,15 @@ pub const FAT32 = struct {
     pub fn deinit(self: *Self) void {
         self.alloc.free(self.buf);
         self.* = undefined;
+    }
+
+    fn find_first_sector_of_cluster(self: Self, cluster_num: usize) usize {
+        const bpb: *BIOSParameterBlock = &self.bpb;
+        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
+        const first_data_sector = bpb.reserved_sector_count + (bpb.num_of_fats * bpb.fat_size_32) + root_dir_sectors;
+        const first_sector_of_cluster = ((cluster_num - 2) * bpb.sectors_per_cluster) + first_data_sector;
+        return first_sector_of_cluster * bpb.bytes_per_sector;
+
     }
 
     fn parse_boot_sector(first_part: *[11]u8, second_part: []u8) !BootSector {
@@ -234,4 +245,43 @@ pub const FAT32 = struct {
 
         reserved: *[12]u8,
     };
+
+    pub const FAT32State = union(enum) {
+        /// 0x0000000
+        free,
+
+        /// holds cluster number of the next used cluster
+        /// for allocated file TODO: verify if true
+        ///
+        /// 0x0000002 to MAX, MAX = Maximum Valid Cluster Number
+        allocated: usize,
+
+        /// (MAX + 1) to 0xFFFFFF6
+        reserved,
+
+        /// 0xFFFFFF7
+        bad,
+
+        /// could be interpreted as EOF
+        ///
+        /// 0xFFFFFF8 to 0xFFFFFFE
+        reserved_dont_use,
+
+        /// 0xFFFFFFFF
+        eof,
+    };
+
+    pub const FileAllocationTable = struct {
+        state: FAT32State,
+    };
+};
+
+test {
+    std.testing.refAllDecls(Tests);
+}
+
+const Tests = struct {
+
+    test "read root cluster" {
+    }
 };
