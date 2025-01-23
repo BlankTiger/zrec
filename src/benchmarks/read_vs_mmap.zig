@@ -5,7 +5,6 @@ const reader = lib.reader;
 const log = std.log.scoped(.read_vs_mmap);
 const utils = @import("utils.zig");
 
-
 const path = "filesystems/fat32_filesystem.img";
 
 fn run_read_reader(core_count: usize) !void {
