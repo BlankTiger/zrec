@@ -11,10 +11,9 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.13.0
-      - run: echo "Benchmark for current changes"
+      - run: echo "Benchmark for current changes" && rm -rf /home/runner/.cache/zig
       - run: zig build bench -Doptimize=Debug --summary all
       - run: zig build bench -Doptimize=ReleaseSafe --summary all
-      - run: echo "Benchmark for previous commit"
-      - run: git reset --hard HEAD~1
+      - run: echo "Benchmark for previous commit" && git reset --hard HEAD~1 && zig build clean-all && rm -rf /home/runner/.cache/zig
       - run: zig build bench -Doptimize=Debug --summary all
       - run: zig build bench -Doptimize=ReleaseSafe --summary all
