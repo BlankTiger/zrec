@@ -155,10 +155,10 @@ const Tests = struct {
     const tlog = std.log.scoped(.jpg_tests);
 
     const TestExample = enum {
-        @"input/example1.jpg",
-        @"input/example2.jpg",
-        @"input/example3.jpg",
-        @"input/example4.jpg",
+        @"input/jpgs/example1.jpg",
+        @"input/jpgs/example2.jpg",
+        @"input/jpgs/example3.jpg",
+        @"input/jpgs/example4.jpg",
 
         const paths = p: {
             const self_type_info = @typeInfo(TestExample).Enum;

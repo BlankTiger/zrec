@@ -3,6 +3,7 @@ const lib = @import("../lib.zig");
 const Reader = lib.Reader;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
+const log = std.log.scoped(.fat);
 
 pub const FAT32 = struct {
     alloc: Allocator,
@@ -39,18 +40,25 @@ pub const FAT32 = struct {
         const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
         const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
         if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
-        std.log.debug("count_of_clusters: {d}", .{count_of_clusters});
-        std.log.debug("bytes_per_sector: {d}", .{bpb.bytes_per_sector});
-        std.log.debug("root_cluster: {d}", .{bpb.bytes_per_sector});
+        // TODO: start here, image size differs
+        log.debug("root_dir_sectors: {d}", .{root_dir_sectors});
+        log.debug("sectors_per_cluster: {d}", .{bpb.sectors_per_cluster});
+        log.debug("count_of_clusters: {d}", .{count_of_clusters});
+        log.debug("image size: {d}", .{bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector});
+        log.debug("bytes_per_sector: {d}", .{bpb.bytes_per_sector});
+        log.debug("root_cluster: {d}", .{bpb.root_cluster});
 
-        return Self {
+        var self: Self = .{
             .alloc = alloc,
             .reader = reader,
             .buf = buf,
             .filesystem = mem,
             .boot_sector = bs,
             .bios_parameter_block = bpb,
+            .fat = undefined,
         };
+        self.fat = try self.parse_fat();
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
@@ -58,8 +66,16 @@ pub const FAT32 = struct {
         self.* = undefined;
     }
 
+    fn parse_fat(self: Self) ![]FileAllocationTable {
+        var fat = std.ArrayList(FileAllocationTable).init(self.alloc);
+        const bpb = &self.bios_parameter_block;
+        const s = self.find_first_sector_of_cluster(bpb.root_cluster);
+        log.debug("first sector of root cluster: {d}", .{s});
+        return try fat.toOwnedSlice();
+    }
+
     fn find_first_sector_of_cluster(self: Self, cluster_num: usize) usize {
-        const bpb: *BIOSParameterBlock = &self.bpb;
+        const bpb = &self.bios_parameter_block;
         const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
         const first_data_sector = bpb.reserved_sector_count + (bpb.num_of_fats * bpb.fat_size_32) + root_dir_sectors;
         const first_sector_of_cluster = ((cluster_num - 2) * bpb.sectors_per_cluster) + first_data_sector;
@@ -281,6 +297,60 @@ test {
 }
 
 const Tests = struct {
+    const FilesystemHandler = lib.FilesystemHandler;
+    const testing = std.testing;
+    const t_alloc = testing.allocator;
+    const FAT32_PATH = "./filesystems/fat32_filesystem.img";
+    const expect = testing.expect;
+    const tlog = std.log.scoped(.fat_tests);
+
+    fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
+        const T = @TypeOf(a);
+
+        inline for (@typeInfo(T).Struct.fields) |field_info| {
+            const f_name = field_info.name;
+            const f_a = @field(a, f_name);
+            const f_b = @field(b, f_name);
+            const f_info = @typeInfo(@TypeOf(f_a));
+            // std.debug.print("type tag: {s}\n", .{@tagName(f_info)});
+            // @compileLog("type tag: " ++ @tagName(f_info));
+
+            switch (f_info) {
+                .Pointer => {
+                    if (!std.mem.eql(u8, f_a, f_b)) {
+                        tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
+                        return false;
+                    }
+                },
+                .Int => {
+                    if (f_a != f_b) {
+                        tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
+                        return false;
+                    }
+                },
+                else => unreachable
+            }
+        }
+        return true;
+    }
+
+    test "fresh fat32 is read as expected with all backup info in sector 6" {
+        testing.log_level = .debug;
+        var fs_handler = try FilesystemHandler.init(t_alloc, FAT32_PATH);
+        var fs = try fs_handler.determine_filesystem();
+        defer fs_handler.deinit();
+        defer fs.deinit();
+
+        switch (fs) {
+            .fat32 => |fat32| {
+                const bkp_bs = try fat32.get_backup_boot_sector();
+                const bkp_bpb = fat32.get_backup_bios_parameter_block();
+                try expect(custom_slice_and_int_eql(fat32.boot_sector, bkp_bs));
+                try expect(custom_slice_and_int_eql(fat32.bios_parameter_block, bkp_bpb));
+            },
+            else => unreachable
+        }
+    }
 
     test "read root cluster" {
     }
