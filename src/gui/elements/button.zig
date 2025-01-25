@@ -19,11 +19,12 @@ text_color: c.SDL_Color,
 bg_color: c.SDL_Color,
 clicked_bg_color: c.SDL_Color,
 state: enum { down, up } = .up,
-action: *const fn() anyerror!void,
+action: ActionT,
 
 text_surface: *c.SDL_Surface,
 text_texture: *c.SDL_Texture,
 
+const ActionT = *const fn(*Button) anyerror!void;
 const Button = @This();
 
 pub fn init(
@@ -34,7 +35,7 @@ pub fn init(
     text_color: c.SDL_Color,
     bg_color: c.SDL_Color,
     clicked_bg_color: c.SDL_Color,
-    action: *const fn() anyerror!void,
+    action: ActionT,
 ) Button {
     const txt_surface = c.TTF_RenderText_Shaded(font, @as([*c]const u8, @ptrCast(text)), text.len, text_color, bg_color);
     const txt_texture = c.SDL_CreateTextureFromSurface(renderer, txt_surface);
@@ -67,13 +68,13 @@ fn destroy_text(self: Button) void {
 
 pub fn click(self: *Button) !void {
     self.state = .down;
-    try self.action();
+    try self.action(self);
 }
 
 const CLICKED_TIME = 90;
 var clicked_time: u64 = 0;
 
-pub fn update(self: *Button, ev: ?c.SDL_Event) void {
+pub fn update(self: *Button) void {
     if (self.state == .down and clicked_time == 0) {
         clicked_time = c.SDL_GetTicks();
         self.update_text_bg();
@@ -84,13 +85,6 @@ pub fn update(self: *Button, ev: ?c.SDL_Event) void {
         self.update_text_bg();
         clicked_time = 0;
     }
-
-    if (ev) |e| switch (e.type) {
-        c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
-            log.debug("{any}", .{e.button});
-        },
-        else => unreachable,
-    };
 }
 
 fn update_text_bg(self: *Button) void {
@@ -104,19 +98,30 @@ fn update_text_bg(self: *Button) void {
 }
 
 pub fn draw(self: Button) void {
-    const bg = switch (self.state) {
-        .up => &self.bg_color,
-        .down => &self.clicked_bg_color,
+    const bg = &switch (self.state) {
+        .up => self.bg_color,
+        .down => self.clicked_bg_color,
     };
     const r = &self.rect;
     if (self.radius > 0) {
+        // TODO: make rounded buttons
     } else {
         _ = c.SDL_SetRenderDrawColor(self.r, bg.r, bg.g, bg.b, bg.a);
         _ = c.SDL_RenderFillRect(self.r, r);
     }
+
+    // TODO: fix drawing button text, if it is not wide enough its stretched
     const _pad_x = self.pad_x * r.w;
     const _pad_y = self.pad_y * r.h;
     const bounding_rect: c.SDL_FRect = .{ .x = r.x + _pad_x, .y = r.y + _pad_y, .w = r.w - _pad_x*2, .h = r.h - _pad_y*2 };
     _ = c.SDL_RenderTexture(self.r, self.text_texture, null, &bounding_rect);
 }
 
+// TODO: comptime generate the mapping from fn name + _action to the function
+pub const start_btn_action: ActionT = Actions.start_btn;
+
+const Actions = struct {
+    fn start_btn(self: *Button) !void {
+        log.debug("clicked button with text: {s}", .{self.text});
+    }
+};

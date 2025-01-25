@@ -1,5 +1,6 @@
 const std = @import("std");
 const config = @import("config");
+const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.gui_main);
 const e = @import("elements.zig");
 const c = @cImport({
@@ -11,6 +12,10 @@ var FPS: u32 = config.fps;
 var SHOULD_QUIT = false;
 
 pub fn main() !void {
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa_state.deinit();
+    const gpa = gpa_state.allocator();
+
     const SCREEN_TICKS_PER_FRAME = 1000.0 / @as(f64, @floatFromInt(FPS));
 
     if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
@@ -35,7 +40,7 @@ pub fn main() !void {
     }
     defer c.TTF_Quit();
 
-    var gui = GUI.init(renderer);
+    var gui = try GUI.init(gpa, renderer);
     defer gui.deinit();
 
     var avg_fps: f64 = 0;
@@ -58,20 +63,30 @@ pub fn main() !void {
 }
 
 const GUI = struct {
+    a: Allocator,
+    r: *c.SDL_Renderer,
     font: *c.TTF_Font,
-    start_btn: e.Button,
+    elements: []e.Element,
 
-    pub fn init(r: *c.SDL_Renderer) GUI {
-        const default_font = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 36).?;
+    pub fn init(a: Allocator, r: *c.SDL_Renderer) !GUI {
+        const f = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 36).?;
+        const _elements = [_]e.Element {
+            .{ .button = start_btn(r, f) },
+            .{ .button = end_btn(r, f) },
+        };
+        const elements = try a.dupe(e.Element, &_elements);
         return .{
-            .font = default_font,
-            .start_btn = start_btn(r, default_font),
+            .a = a,
+            .r = r,
+            .font = f,
+            .elements = elements,
         };
     }
 
     pub fn deinit(self: GUI) void {
-        self.start_btn.deinit();
+        for (self.elements) |b| b.deinit();
         c.TTF_CloseFont(self.font);
+        self.a.free(self.elements);
     }
 
     fn start_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Button {
@@ -79,19 +94,28 @@ const GUI = struct {
             r,
             f,
             .{ .x = 50, .y = 50, .w = 100, .h = 40 },
-            "Click",
+            "Start",
             .{ .r = 240, .g = 240, .b = 240, .a = 255 },
             .{ .r = 50, .g = 50, .b = 50, .a = 255 },
             .{ .r = 0, .g = 125, .b = 125, .a = 255 },
-            struct {
-                fn a() !void {
-                    log.debug("clicked start_btn", .{});
-                }
-            }.a,
+            e.Button.start_btn_action,
         );
     }
 
+    fn end_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Button {
+        return e.Button.init(
+            r,
+            f,
+            .{ .x = 450, .y = 50, .w = 100, .h = 40 },
+            "End",
+            .{ .r = 240, .g = 240, .b = 240, .a = 255 },
+            .{ .r = 50, .g = 50, .b = 50, .a = 255 },
+            .{ .r = 0, .g = 125, .b = 125, .a = 255 },
+            e.Button.start_btn_action,
+        );
+    }
 };
+
 
 fn update(gui: *GUI) !void {
     var event: c.SDL_Event = undefined;
@@ -103,21 +127,26 @@ fn update(gui: *GUI) !void {
             },
             c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
                 const p: c.SDL_FPoint = .{ .x = event.button.x, .y = event.button.y };
-                if (c.SDL_PointInRectFloat(&p, &gui.start_btn.rect)) {
-                    try gui.start_btn.click();
+                for (gui.elements) |*el| {
+                    if (el.* == .button) {
+                        var b = &el.button;
+                        if (c.SDL_PointInRectFloat(&p, &b.rect)) {
+                            try b.click();
+                        }
+                    }
                 }
             },
             else => {},
         }
     }
-    gui.start_btn.update(null);
+    for (gui.elements) |*el| el.update();
 }
 
 fn draw(r: *c.SDL_Renderer, w: *c.SDL_Window, gui: GUI) !void {
     _ = c.SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
     _ = c.SDL_RenderClear(r);
 
-    gui.start_btn.draw();
+    for (gui.elements) |*b| b.draw();
 
     _ = c.SDL_RenderPresent(r);
     _ = c.SDL_UpdateWindowSurface(w);
