@@ -24,7 +24,6 @@ fn build_and_run_step(b: *std.Build) !void {
     const run = b.step("run", "Run the app");
 
     const build_gui = b.option(bool, "build_gui", "Build as a GUI app instead of a TUI app.") orelse false;
-
     const log_level = b.option(std.log.Level, "log_level", "App log_level.") orelse .info;
     const options = b.addOptions();
     options.addOption(bool, "build_gui", build_gui);
@@ -38,9 +37,10 @@ fn build_and_run_step(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addOptions("config", options);
 
     if (build_gui) {
+        const fps = b.option(u16, "fps", "GUI refresh rate.") orelse 120;
+        options.addOption(u16, "fps", fps);
         const sdl3_cmake_prepare = b.addSystemCommand(&[_][]const u8{
             "cmake",
             "-S",
@@ -72,6 +72,7 @@ fn build_and_run_step(b: *std.Build) !void {
         exe.linkSystemLibrary("m");
         exe.linkLibC();
     }
+    exe.root_module.addOptions("config", options);
 
     const mod = b.createModule(.{
         .root_source_file = b.path("src/lib.zig"),
