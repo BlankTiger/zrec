@@ -1,10 +1,13 @@
 const std = @import("std");
+const log = std.log.scoped(.build);
 
 var target: std.Build.ResolvedTarget = undefined;
 var optimize: std.builtin.OptimizeMode = undefined;
+var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+const allocator = arena_state.allocator();
 
-
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
+    defer arena_state.deinit();
     target = b.standardTargetOptions(.{});
     optimize = b.standardOptimizeOption(.{});
 
@@ -13,11 +16,21 @@ pub fn build(b: *std.Build) void {
     const create_fs = create_filesystems_step(b);
     test_step(b, clean, create_fs);
     bench_step(b, clean, create_fs);
-    build_and_run_step(b);
+    docs_step(b);
+    try build_and_run_step(b);
 }
 
-fn build_and_run_step(b: *std.Build) void {
+fn build_and_run_step(b: *std.Build) !void {
     const run = b.step("run", "Run the app");
+
+    const build_gui = b.option(bool, "build_gui", "Build as a GUI app instead of a TUI app.") orelse false;
+
+    const log_level = b.option(std.log.Level, "log_level", "App log_level.") orelse .info;
+    const options = b.addOptions();
+    options.addOption(bool, "build_gui", build_gui);
+    options.addOption(std.log.Level, "log_level", log_level);
+    log.debug("building gui: {any}", .{build_gui});
+    log.debug("log_level: {any}", .{log_level});
 
     const exe = b.addExecutable(.{
         .name = "zrec",
@@ -25,12 +38,48 @@ fn build_and_run_step(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addOptions("config", options);
+
+    if (build_gui) {
+        const sdl3_cmake_prepare = b.addSystemCommand(&[_][]const u8{
+            "cmake",
+            "-S",
+            "./src/gui/SDL",
+            "-B",
+            "./build",
+            try std.fmt.allocPrint(allocator, "-DCMAKE_BUILD_TYPE={s}", .{
+                switch (optimize) {
+                    .Debug => "Debug",
+                    .ReleaseSmall => "MinSizeRel",
+                    .ReleaseSafe => "RelWithDebInfo",
+                    .ReleaseFast => "Release",
+                }
+            })
+        });
+
+        const sdl3_cmake_build = b.addSystemCommand(&[_][]const u8{
+            "cmake",
+            "--build",
+            "./build",
+            "--parallel",
+            "8",
+        });
+        sdl3_cmake_build.step.dependOn(&sdl3_cmake_prepare.step);
+        exe.step.dependOn(&sdl3_cmake_build.step);
+        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build" });
+        exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL/include" });
+        exe.linkSystemLibrary("SDL3");
+        exe.linkSystemLibrary("m");
+        exe.linkLibC();
+    }
+
     const mod = b.createModule(.{
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
     });
     exe.root_module.addImport("zrec", mod);
+
     b.installArtifact(exe);
 
     const build_lib = b.option(bool, "build_lib", "Build a static library") orelse false;
@@ -48,7 +97,7 @@ fn build_and_run_step(b: *std.Build) void {
     run_cmd.step.dependOn(b.getInstallStep());
 
     if (b.args) |args| {
-        for (args) |a| std.log.debug("{s}", .{a});
+        for (args, 0..) |a, idx| log.debug("cmd_arg {d}: {s}", .{idx+1, a});
         run_cmd.addArgs(args);
     }
     run.dependOn(&run_cmd.step);
@@ -126,4 +175,24 @@ fn create_filesystems_step(b: *std.Build) *std.Build.Step {
         create.dependOn(&create_fat32.step);
     }
     return create;
+}
+
+fn docs_step(b: *std.Build) void {
+    const step = b.step("docs", "Emit docs");
+
+    const lib = b.addStaticLibrary(.{
+        .name = "zrec",
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const docs_install = b.addInstallDirectory(.{
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+        .source_dir = lib.getEmittedDocs(),
+    });
+
+    step.dependOn(&docs_install.step);
+    b.default_step.dependOn(step);
 }
