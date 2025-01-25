@@ -41,34 +41,65 @@ fn build_and_run_step(b: *std.Build) !void {
     if (build_gui) {
         const fps = b.option(u16, "fps", "GUI refresh rate.") orelse 120;
         options.addOption(u16, "fps", fps);
+        const cmake_optimize = try std.fmt.allocPrint(allocator, "-DCMAKE_BUILD_TYPE={s}", .{
+            switch (optimize) {
+                .Debug        => "Debug",
+                .ReleaseSmall => "MinSizeRel",
+                .ReleaseSafe  => "RelWithDebInfo",
+                .ReleaseFast  => "Release",
+            }}
+        );
         const sdl3_cmake_prepare = b.addSystemCommand(&[_][]const u8{
             "cmake",
             "-S",
             "./src/gui/SDL",
             "-B",
-            "./build",
-            try std.fmt.allocPrint(allocator, "-DCMAKE_BUILD_TYPE={s}", .{
-                switch (optimize) {
-                    .Debug => "Debug",
-                    .ReleaseSmall => "MinSizeRel",
-                    .ReleaseSafe => "RelWithDebInfo",
-                    .ReleaseFast => "Release",
-                }
-            })
+            "./build/SDL",
+            cmake_optimize,
+            "--log-level=ERROR"
         });
 
         const sdl3_cmake_build = b.addSystemCommand(&[_][]const u8{
             "cmake",
             "--build",
-            "./build",
+            "./build/SDL",
             "--parallel",
             "8",
+            "--",
+            "--quiet"
+        });
+
+        const sdl3_ttf_cmake_prepare = b.addSystemCommand(&[_][]const u8{
+            "cmake",
+            "-S",
+            "./src/gui/SDL_ttf",
+            "-B",
+            "./build/SDL_ttf",
+            cmake_optimize,
+            "--log-level=ERROR"
+        });
+
+        const sdl3_ttf_cmake_build = b.addSystemCommand(&[_][]const u8{
+            "cmake",
+            "--build",
+            "./build/SDL_ttf",
+            "--parallel",
+            "8",
+            "--",
+            "--quiet"
         });
         sdl3_cmake_build.step.dependOn(&sdl3_cmake_prepare.step);
+        sdl3_ttf_cmake_build.setEnvironmentVariable("SDL3_DIR", "./build/SDL");
+        sdl3_ttf_cmake_build.step.dependOn(&sdl3_ttf_cmake_prepare.step);
+        sdl3_ttf_cmake_build.step.dependOn(&sdl3_ttf_cmake_prepare.step);
         exe.step.dependOn(&sdl3_cmake_build.step);
-        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build" });
+        exe.step.dependOn(&sdl3_ttf_cmake_build.step);
+        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build/SDL" });
+        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build/SDL_ttf" });
         exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL/include" });
+        exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL_ttf/include" });
         exe.linkSystemLibrary("SDL3");
+        exe.linkSystemLibrary("SDL3_ttf");
         exe.linkSystemLibrary("m");
         exe.linkLibC();
     }
