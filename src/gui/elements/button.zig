@@ -4,6 +4,7 @@ const c = @cImport({
     @cInclude("SDL3/SDL.h");
     @cInclude("SDL3_ttf/SDL_ttf.h");
 });
+const AppState = @import("../state.zig").AppState;
 
 r: *c.SDL_Renderer,
 f: *c.TTF_Font,
@@ -16,6 +17,7 @@ pad_y: f32,
 /// radius of the corners
 radius: f32 = 0,
 text_color: c.SDL_Color,
+text_rect: c.SDL_FRect = undefined,
 bg_color: c.SDL_Color,
 clicked_bg_color: c.SDL_Color,
 state: enum { down, up } = .up,
@@ -24,7 +26,7 @@ action: ActionT,
 text_surface: *c.SDL_Surface,
 text_texture: *c.SDL_Texture,
 
-const ActionT = *const fn(*Button) anyerror!void;
+const ActionT = *const fn(*Button, *AppState) anyerror!void;
 const Button = @This();
 
 pub fn init(
@@ -40,14 +42,18 @@ pub fn init(
     const txt_surface = c.TTF_RenderText_Shaded(font, @as([*c]const u8, @ptrCast(text)), text.len, text_color, bg_color);
     const txt_texture = c.SDL_CreateTextureFromSurface(renderer, txt_surface);
 
-    return .{
+    const pad_x = 0.15;
+    const pad_y = 0.10;
+
+    var btn: Button = .{
         .r = renderer,
         .f = font,
-        .rect = rect,
+        .rect = undefined,
         .text = text,
-        .pad_x = 0.15,
-        .pad_y = 0.10,
+        .pad_x = pad_x,
+        .pad_y = pad_y,
         .text_color = text_color,
+        .text_rect = undefined,
         .bg_color = bg_color,
         .clicked_bg_color = clicked_bg_color,
         .action = action,
@@ -55,6 +61,19 @@ pub fn init(
         .text_surface = txt_surface,
         .text_texture = txt_texture,
     };
+
+    var r = rect;
+    const _pad_x = pad_x * r.w;
+    const _pad_y = pad_y * r.h;
+    var bounding_rect: c.SDL_FRect = .{ .x = r.x + _pad_x, .y = r.y + _pad_y, .w = @floatFromInt(btn.text_surface.w), .h = @floatFromInt(btn.text_surface.h) };
+    r.w = @max(r.w, (1 + pad_x) * bounding_rect.w);
+    r.h = @max(r.h, (1 + pad_y) * bounding_rect.h);
+    bounding_rect.x = r.x + (r.w - bounding_rect.w) / 2;
+    bounding_rect.y = r.y + (r.h - bounding_rect.h) / 2;
+    btn.text_rect = bounding_rect;
+    btn.rect = r;
+
+    return btn;
 }
 
 pub fn deinit(self: Button) void {
@@ -66,9 +85,9 @@ fn destroy_text(self: Button) void {
     _ = c.SDL_DestroyTexture(self.text_texture);
 }
 
-pub fn click(self: *Button) !void {
+pub fn click(self: *Button, state: *AppState) !void {
     self.state = .down;
-    try self.action(self);
+    try self.action(self, state);
 }
 
 const CLICKED_TIME = 90;
@@ -103,25 +122,12 @@ pub fn draw(self: Button) void {
         .down => self.clicked_bg_color,
     };
     const r = &self.rect;
+
     if (self.radius > 0) {
         // TODO: make rounded buttons
     } else {
         _ = c.SDL_SetRenderDrawColor(self.r, bg.r, bg.g, bg.b, bg.a);
         _ = c.SDL_RenderFillRect(self.r, r);
     }
-
-    // TODO: fix drawing button text, if it is not wide enough its stretched
-    const _pad_x = self.pad_x * r.w;
-    const _pad_y = self.pad_y * r.h;
-    const bounding_rect: c.SDL_FRect = .{ .x = r.x + _pad_x, .y = r.y + _pad_y, .w = r.w - _pad_x*2, .h = r.h - _pad_y*2 };
-    _ = c.SDL_RenderTexture(self.r, self.text_texture, null, &bounding_rect);
+    _ = c.SDL_RenderTexture(self.r, self.text_texture, null, &self.text_rect);
 }
-
-// TODO: comptime generate the mapping from fn name + _action to the function
-pub const start_btn_action: ActionT = Actions.start_btn;
-
-const Actions = struct {
-    fn start_btn(self: *Button) !void {
-        log.debug("clicked button with text: {s}", .{self.text});
-    }
-};
