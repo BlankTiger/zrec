@@ -72,15 +72,15 @@ const GUI = struct {
 
         const f = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 36).?;
         const _elements = [_]e.Element {
-            .{ .button = GUIElements.start_btn(r, f) },
-            .{ .button = GUIElements.end_btn(r, f) },
+            GUIElements.finish_btn(r, f),
+            GUIElements.choose_file_btn(r, f),
         };
         const elements = try a.dupe(e.Element, &_elements);
         return .{
             .a = a,
             .r = r,
             .w = w,
-            .state = .{},
+            .state = .{ .gpa = a },
             .font = f,
             .elements = elements,
         };
@@ -89,6 +89,7 @@ const GUI = struct {
     pub fn deinit(self: *GUI) void {
         for (self.elements) |b| b.deinit();
         self.a.free(self.elements);
+        self.state.deinit();
         c.TTF_CloseFont(self.font);
         c.SDL_DestroyWindow(self.w);
         c.SDL_DestroyRenderer(self.r);
@@ -134,38 +135,52 @@ const GUI = struct {
 const GUIElements = struct {
     const act_log = std.log.scoped(.action);
 
-    fn start_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Button {
-        return e.Button.init(
-            r,
-            f,
-            .{ .x = 50, .y = 50, .w = 100, .h = 40 },
-            "Start",
-            .{ .r = 240, .g = 240, .b = 240, .a = 255 },
-            .{ .r = 50, .g = 50, .b = 50, .a = 255 },
-            .{ .r = 0, .g = 125, .b = 125, .a = 255 },
-            struct {
-                fn a(self: *e.Button, _: *AppState) !void {
-                    act_log.debug("clicked button with text: {s}", .{self.text});
-                }
-            }.a,
-        );
+    fn finish_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
+        return .{
+            .button = e.Button.init(
+                r,
+                f,
+                .{ .x = 450, .y = 50, .w = 100, .h = 40 },
+                "Finish",
+                .{ .r = 240, .g = 240, .b = 240, .a = 255 },
+                .{ .r = 50, .g = 50, .b = 50, .a = 255 },
+                .{ .r = 0, .g = 125, .b = 125, .a = 255 },
+                struct {
+                    fn a(_: *e.Button, app_state: *AppState) !void {
+                        log.debug("byeeeeeee", .{});
+                        app_state.should_quit = true;
+                    }
+                }.a,
+            )
+        };
     }
 
-    fn end_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Button {
-        return e.Button.init(
-            r,
-            f,
-            .{ .x = 450, .y = 50, .w = 100, .h = 40 },
-            "Finish",
-            .{ .r = 240, .g = 240, .b = 240, .a = 255 },
-            .{ .r = 50, .g = 50, .b = 50, .a = 255 },
-            .{ .r = 0, .g = 125, .b = 125, .a = 255 },
-            struct {
-                fn a(_: *e.Button, app_state: *AppState) !void {
-                    log.debug("byeeeeeee", .{});
-                    app_state.should_quit = true;
-                }
-            }.a,
-        );
+    fn choose_file_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
+        return .{
+            .button = e.Button.init(
+                r,
+                f,
+                .{ .x = 50, .y = 50, .w = 100, .h = 40 },
+                "Choose disk image",
+                .{ .r = 240, .g = 240, .b = 240, .a = 255 },
+                .{ .r = 50, .g = 50, .b = 50, .a = 255 },
+                .{ .r = 0, .g = 125, .b = 125, .a = 255 },
+                struct {
+                    fn a(self: *e.Button, s: *AppState) !void {
+                        c.SDL_ShowOpenFileDialog(&callback, @as(*anyopaque, @ptrCast(s)), null, null, 0, null, false);
+                        act_log.debug("clicked button with text: {s}", .{self.text});
+                    }
+
+                    fn callback(app_state: ?*anyopaque, filelist: [*c]const [*c]const u8, filter: c_int) callconv(.C) void {
+                        _ = filter;
+
+                        const s = @as(*AppState, @alignCast(@ptrCast(app_state)));
+                        const file = filelist[0];
+                        const path = file[0..std.mem.len(file)];
+                        s.save_path(path) catch @panic("huhh");
+                    }
+                }.a,
+            )
+        };
     }
 };
