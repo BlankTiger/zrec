@@ -35,7 +35,7 @@ const GUI = struct {
     a: Allocator,
     r: *c.SDL_Renderer,
     w: *c.SDL_Window,
-    state: AppState,
+    state: *AppState,
     font: *c.TTF_Font,
     elements: []e.Element,
 
@@ -49,14 +49,16 @@ const GUI = struct {
             return error.CouldntCreateRenderer;
         };
 
-        const f = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 36).?;
-        const state = try AppState.init(a);
+        const f = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 32).?;
+        const state = try a.create(AppState);
+        state.* = try AppState.init(a);
         const _elements = [_]e.Element {
             GUIElements.fps_counter(r, f, state.fps, state.fps_len),
-            GUIElements.finish_btn(r, f),
+            // GUIElements.finish_btn(r, f),
             GUIElements.choose_file_btn(r, f),
         };
         const elements = try a.dupe(e.Element, &_elements);
+
         return .{
             .a = a,
             .r = r,
@@ -71,6 +73,7 @@ const GUI = struct {
         for (self.elements) |*b| b.deinit();
         self.a.free(self.elements);
         self.state.deinit();
+        self.a.destroy(self.state);
         c.TTF_CloseFont(self.font);
         c.SDL_DestroyWindow(self.w);
         c.SDL_DestroyRenderer(self.r);
@@ -79,21 +82,21 @@ const GUI = struct {
 
     pub fn run(self: *GUI) !void {
         const FPS: u32 = config.fps;
-        const SCREEN_TICKS_PER_FRAME = 1000.0 / @as(f64, @floatFromInt(FPS));
+        const SCREEN_TICKS_PER_FRAME = 1000000000 / FPS;
         var avg_fps: f64 = 0;
 
         while (!self.state.should_quit) {
-            const start_tick = c.SDL_GetTicks();
+            const start_tick = c.SDL_GetTicksNS();
 
             try self.update();
             try self.draw();
 
-            const end_tick = c.SDL_GetTicks();
-            const delta: f64 = @floatFromInt(end_tick - start_tick);
-            const den: f64 = SCREEN_TICKS_PER_FRAME - delta;
-            if (den != 0) {
-                avg_fps = 1000.0 / den;
-                if (delta < SCREEN_TICKS_PER_FRAME) c.SDL_Delay(@intFromFloat(den));
+            const end_tick = c.SDL_GetTicksNS();
+            const frame_ticks = end_tick - start_tick;
+            const diff = SCREEN_TICKS_PER_FRAME - frame_ticks;
+            if (diff != 0 and SCREEN_TICKS_PER_FRAME > frame_ticks) {
+                avg_fps = 1000000000 / @as(f64, @floatFromInt(diff));
+                c.SDL_DelayNS(diff);
                 try self.state.update_fps(avg_fps);
             }
         }
@@ -114,7 +117,7 @@ const GUI = struct {
                         if (el.* == .button) {
                             var b = &el.button;
                             if (c.SDL_PointInRectFloat(&p, &b.rect)) {
-                                try b.click(&self.state);
+                                try b.click(self.state);
                             }
                         }
                     }
@@ -160,26 +163,26 @@ const GUIElements = struct {
         };
     }
 
-    fn finish_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
-        return .{
-            .button = e.Button.init(
-                r,
-                f,
-                .{ .x = 450, .y = 50, .w = 100, .h = 40 },
-                "Finish",
-                .{ .r = 240, .g = 240, .b = 240, .a = 255 },
-                .{ .r = 50, .g = 50, .b = 50, .a = 255 },
-                .{ .r = 0, .g = 125, .b = 125, .a = 255 },
-                struct {
-                    fn a(_: *e.Button, app_state: *AppState) !void {
-                        log.debug("byeeeeeee", .{});
-                        app_state.should_quit = true;
-                    }
-                }.a,
-            )
-        };
-    }
-
+    // fn finish_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
+    //     return .{
+    //         .button = e.Button.init(
+    //             r,
+    //             f,
+    //             .{ .x = 450, .y = 50, .w = 100, .h = 40 },
+    //             "Finish",
+    //             .{ .r = 240, .g = 240, .b = 240, .a = 255 },
+    //             .{ .r = 50, .g = 50, .b = 50, .a = 255 },
+    //             .{ .r = 0, .g = 125, .b = 125, .a = 255 },
+    //             struct {
+    //                 fn a(_: *e.Button, app_state: *AppState) !void {
+    //                     log.debug("byeeeeeee", .{});
+    //                     app_state.should_quit = true;
+    //                 }
+    //             }.a,
+    //         )
+    //     };
+    // }
+    //
     fn choose_file_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
         return .{
             .button = e.Button.init(
