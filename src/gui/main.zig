@@ -9,8 +9,6 @@ const c = @cImport({
     @cInclude("SDL3_ttf/SDL_ttf.h");
 });
 
-var FPS: u32 = config.fps;
-
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa_state.deinit();
@@ -28,28 +26,9 @@ pub fn main() !void {
     }
     defer c.TTF_Quit();
 
-    const SCREEN_TICKS_PER_FRAME = 1000.0 / @as(f64, @floatFromInt(FPS));
-
     var gui = try GUI.init(gpa);
     defer gui.deinit();
-
-    var avg_fps: f64 = 0;
-
-    while (!gui.state.should_quit) {
-        const start_tick = c.SDL_GetTicks();
-
-        try gui.update();
-        try gui.draw();
-
-        const end_tick = c.SDL_GetTicks();
-        const delta: f64 = @floatFromInt(end_tick - start_tick);
-        const den: f64 = SCREEN_TICKS_PER_FRAME - delta;
-        if (den != 0) {
-            avg_fps = 1000.0 / den;
-            if (delta < SCREEN_TICKS_PER_FRAME) c.SDL_Delay(@intFromFloat(den));
-            // log.debug("fps: {d}", .{@round(avg_fps)});
-        }
-    }
+    try gui.run();
 }
 
 const GUI = struct {
@@ -71,7 +50,9 @@ const GUI = struct {
         };
 
         const f = c.TTF_OpenFont("./resources/IosevkaNerdFontMono-Regular.ttf", 36).?;
+        const state = try AppState.init(a);
         const _elements = [_]e.Element {
+            GUIElements.fps_counter(r, f, state.fps, state.fps_len),
             GUIElements.finish_btn(r, f),
             GUIElements.choose_file_btn(r, f),
         };
@@ -80,14 +61,14 @@ const GUI = struct {
             .a = a,
             .r = r,
             .w = w,
-            .state = .{ .gpa = a },
+            .state = state,
             .font = f,
             .elements = elements,
         };
     }
 
     pub fn deinit(self: *GUI) void {
-        for (self.elements) |b| b.deinit();
+        for (self.elements) |*b| b.deinit();
         self.a.free(self.elements);
         self.state.deinit();
         c.TTF_CloseFont(self.font);
@@ -95,6 +76,29 @@ const GUI = struct {
         c.SDL_DestroyRenderer(self.r);
         self.* = undefined;
     }
+
+    pub fn run(self: *GUI) !void {
+        const FPS: u32 = config.fps;
+        const SCREEN_TICKS_PER_FRAME = 1000.0 / @as(f64, @floatFromInt(FPS));
+        var avg_fps: f64 = 0;
+
+        while (!self.state.should_quit) {
+            const start_tick = c.SDL_GetTicks();
+
+            try self.update();
+            try self.draw();
+
+            const end_tick = c.SDL_GetTicks();
+            const delta: f64 = @floatFromInt(end_tick - start_tick);
+            const den: f64 = SCREEN_TICKS_PER_FRAME - delta;
+            if (den != 0) {
+                avg_fps = 1000.0 / den;
+                if (delta < SCREEN_TICKS_PER_FRAME) c.SDL_Delay(@intFromFloat(den));
+                try self.state.update_fps(avg_fps);
+            }
+        }
+    }
+
 
     fn update(self: *GUI) !void {
         var event: c.SDL_Event = undefined;
@@ -119,6 +123,12 @@ const GUI = struct {
             }
         }
         for (self.elements) |*el| el.update();
+
+        if (try self.state.get_path()) |p| {
+            log.debug("nice: {s}", .{p});
+            // load the disk image and show information about it
+            self.state.gpa.free(p);
+        }
     }
 
     fn draw(self: *const GUI) !void {
@@ -134,6 +144,21 @@ const GUI = struct {
 
 const GUIElements = struct {
     const act_log = std.log.scoped(.action);
+
+    fn fps_counter(r: *c.SDL_Renderer, f: *c.TTF_Font, fps: []u8, fps_len: *usize) e.Element {
+        return .{
+            .text = e.Text.init(
+                r,
+                f,
+                .{ .x = 950, .y = 50, .w = 100, .h = 40 },
+                fps,
+                fps_len,
+                true,
+                .{ .r = 240, .g = 240, .b = 240, .a = 255 },
+                .{ .r = 0, .g = 0, .b = 0, .a = 255 },
+            )
+        };
+    }
 
     fn finish_btn(r: *c.SDL_Renderer, f: *c.TTF_Font) e.Element {
         return .{
