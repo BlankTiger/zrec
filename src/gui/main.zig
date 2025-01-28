@@ -10,6 +10,9 @@ const r = @cImport({
     @cInclude("raygui.h");
 });
 
+const font_data = @embedFile("./IosevkaNerdFontMono-Regular.ttf");
+var font: r.Font = undefined;
+
 pub fn main() !void {
     var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa_state.deinit();
@@ -20,13 +23,13 @@ pub fn main() !void {
     try gui.run();
 }
 
+
 const GUI = struct {
     gpa: Allocator,
     frame_arena: Allocator,
     frame_arena_state: *std.heap.ArenaAllocator,
     state: *AppState,
     path: ?[]u8 = null,
-
     show_msg_box: bool = false,
 
     pub fn init(gpa: Allocator) !GUI {
@@ -38,8 +41,11 @@ const GUI = struct {
 
         r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
         r.InitWindow(state.width, state.height, "zrec");
+        // NOTE: font HAS TO BE loaded after InitWindow (wasted hours counter: 3)
+        font = r.LoadFontFromMemory(".ttf", @ptrCast(font_data), font_data.len, 32, 0, 1000);
         r.SetTargetFPS(config.fps);
         r.GuiSetStyle(r.DEFAULT, r.TEXT_SIZE, 32);
+        r.GuiSetFont(font);
 
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
             log.err("couldnt init SDL", .{});
@@ -104,7 +110,11 @@ const GUI = struct {
             );
         }
 
+        if (self.path != null and !self.state.path_retrieved) self.gpa.free(self.path.?);
         if (!self.state.path_retrieved) self.path = try self.state.get_path();
+        // necessary to push the event loop forward because main loop doesn't
+        // run all the prerequisites of SDL3 and we wouldn't receive the callback
+        // to the file picker without this
         c.SDL_PumpEvents();
     }
 
@@ -127,6 +137,7 @@ const GUI = struct {
 
         if (self.path == null) {
             const msg = "Drop a disk image file";
+            r.GuiSetFont(font);
             r.GuiSetStyle(r.BUTTON, r.TEXT_ALIGNMENT, r.TEXT_ALIGN_MIDDLE);
             r.GuiSetStyle(r.BUTTON, r.BORDER_WIDTH, 10);
             r.GuiSetStyle(r.BUTTON, r.BORDER_COLOR_PRESSED, r.ColorToInt(r.BLUE));
@@ -135,10 +146,25 @@ const GUI = struct {
             r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_PRESSED, r.ColorToInt(r.BLACK));
             self.state.pick_file_clicked = r.GuiButton(
                 .{ .x = 10, .y = 10, .width = @floatFromInt(self.state.width - 20), .height = @floatFromInt(self.state.height - 20) },
-                @ptrCast(@constCast(msg)),
+                @ptrCast(msg[0..]),
             );
         } else {
-
+            const txt: [:0]u8 = try self.frame_arena.allocSentinel(u8, self.path.?.len, 0);
+            @memcpy(txt, self.path.?);
+            const txt_size = r.MeasureTextEx(font, txt, 32, 2);
+            const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
+            // const y = @as(f32, @floatFromInt(@divFloor(self.state.height, @as(c_int, @intCast(2))))) - txt_size.y / 2;
+            r.DrawTextEx(
+                font,
+                txt,
+                .{
+                    .x = x,
+                    .y = 20,
+                },
+                32,
+                2,
+                r.WHITE
+            );
         }
     }
 };
