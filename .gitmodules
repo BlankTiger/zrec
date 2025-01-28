@@ -4,3 +4,12 @@
 [submodule "src/gui/SDL_ttf"]
 	path = src/gui/SDL_ttf
 	url = https://github.com/libsdl-org/SDL_ttf
+[submodule "src/gui/raylib"]
+	path = src/gui/raylib
+	url = https://github.com/raysan5/raylib/
+[submodule "src/gui/raygui"]
+	path = src/gui/raygui
+	url = https://github.com/raysan5/raygui
+[submodule "src/gui/SDL3"]
+	path = src/gui/SDL3
+	url = https://github.com/libsdl-org/SDL

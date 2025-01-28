@@ -25,7 +25,9 @@ fn build_and_run_step(b: *std.Build) !void {
 
     const build_gui = b.option(bool, "build_gui", "Build as a GUI app instead of a TUI app.") orelse false;
     const log_level = b.option(std.log.Level, "log_level", "App log_level.") orelse .info;
+    const fps = b.option(u16, "fps", "GUI refresh rate.") orelse 120;
     const options = b.addOptions();
+    options.addOption(u16, "fps", fps);
     options.addOption(bool, "build_gui", build_gui);
     options.addOption(std.log.Level, "log_level", log_level);
     log.debug("building gui: {any}", .{build_gui});
@@ -39,8 +41,6 @@ fn build_and_run_step(b: *std.Build) !void {
     });
 
     if (build_gui) {
-        const fps = b.option(u16, "fps", "GUI refresh rate.") orelse 120;
-        options.addOption(u16, "fps", fps);
         const cmake_optimize = try std.fmt.allocPrint(allocator, "-DCMAKE_BUILD_TYPE={s}", .{
             switch (optimize) {
                 .Debug        => "Debug",
@@ -52,9 +52,9 @@ fn build_and_run_step(b: *std.Build) !void {
         const sdl3_cmake_prepare = b.addSystemCommand(&[_][]const u8{
             "cmake",
             "-S",
-            "./src/gui/SDL",
+            "./src/gui/SDL3",
             "-B",
-            "./build/SDL",
+            "./build/SDL3",
             cmake_optimize,
             "--log-level=ERROR"
         });
@@ -62,47 +62,43 @@ fn build_and_run_step(b: *std.Build) !void {
         const sdl3_cmake_build = b.addSystemCommand(&[_][]const u8{
             "cmake",
             "--build",
-            "./build/SDL",
+            "./build/SDL3",
             "--parallel",
             "8",
             "--",
             "--quiet"
         });
 
-        const sdl3_ttf_cmake_prepare = b.addSystemCommand(&[_][]const u8{
-            "cmake",
-            "-S",
-            "./src/gui/SDL_ttf",
-            "-B",
-            "./build/SDL_ttf",
-            cmake_optimize,
-            "--log-level=ERROR"
-        });
-
-        const sdl3_ttf_cmake_build = b.addSystemCommand(&[_][]const u8{
-            "cmake",
-            "--build",
-            "./build/SDL_ttf",
-            "--parallel",
-            "8",
-            "--",
-            "--quiet"
-        });
         sdl3_cmake_build.step.dependOn(&sdl3_cmake_prepare.step);
-        sdl3_ttf_cmake_build.setEnvironmentVariable("SDL3_DIR", "./build/SDL");
-        sdl3_ttf_cmake_build.step.dependOn(&sdl3_ttf_cmake_prepare.step);
-        sdl3_ttf_cmake_build.step.dependOn(&sdl3_ttf_cmake_prepare.step);
         exe.step.dependOn(&sdl3_cmake_build.step);
-        exe.step.dependOn(&sdl3_ttf_cmake_build.step);
-        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build/SDL" });
-        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build/SDL_ttf" });
-        exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL/include" });
-        exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL_ttf/include" });
+        exe.addLibraryPath(std.Build.LazyPath{ .cwd_relative = "./build/SDL3" });
+        exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "./src/gui/SDL3/include" });
         exe.linkSystemLibrary("SDL3");
-        exe.linkSystemLibrary("SDL3_ttf");
         exe.linkSystemLibrary("m");
         exe.linkLibC();
+
+        const raylib_dep = b.dependency("raylib", .{
+            .target = target,
+            .optimize = optimize,
+            .shared = false,
+        });
+        const raylib = raylib_dep.artifact("raylib");
+
+        var gen_step = b.addWriteFiles();
+        raylib.step.dependOn(&gen_step.step);
+
+        const raygui_c_path = gen_step.add(
+            "raygui.c",
+            \\#define RAYGUI_IMPLEMENTATION
+            \\#include "raygui.h"
+        );
+        exe.addCSourceFile(.{ .file = raygui_c_path });
+        exe.addIncludePath(b.path("./src/gui/raygui/src"));
+        exe.addIncludePath(b.path("./src/gui/raylib/src"));
+        exe.linkLibC();
+        exe.linkLibrary(raylib);
     }
+
     exe.root_module.addOptions("config", options);
 
     const mod = b.createModule(.{

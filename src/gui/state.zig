@@ -3,28 +3,45 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.app_state);
 
 pub const AppState = struct {
-    gpa: Allocator,
-    should_quit: bool = false,
-    disk_image_path: ?[]u8 = null,
-    path_retrieved: bool = true,
-    fps_buf: []u8,
-    fps: []u8,
-    fps_len: *usize,
-    mutex: std.Thread.Mutex = .{},
+    pub const Settings = struct {
+        gpa: Allocator,
+        width: c_int = 1200,
+        height: c_int = 700,
+        should_quit: bool = false,
+        disk_image_path: ?[]u8 = null,
+        path_retrieved: bool = true,
+        pick_file_clicked: c_int = 0,
+        was_pick_file_clicked: bool = false,
+        mutex: std.Thread.Mutex = .{},
+    };
 
-    pub fn init(gpa: Allocator) !AppState {
-        const fps_buf = try gpa.alloc(u8, 3);
-        const res: AppState = .{ .gpa = gpa, .fps_buf = fps_buf, .fps = fps_buf, .fps_len = try gpa.create(usize) };
-        res.fps_len.* = 3;
-        return res;
+    gpa: Allocator,
+    width: c_int,
+    height: c_int,
+    should_quit: bool,
+    disk_image_path: ?[]u8,
+    path_retrieved: bool,
+    pick_file_clicked: c_int,
+    was_pick_file_clicked: bool,
+    mutex: std.Thread.Mutex,
+
+    pub fn init(opts: Settings) !AppState {
+        var state: AppState = undefined;
+
+        inline for (@typeInfo(AppState).Struct.fields) |f| {
+            const f_name = f.name;
+            const hidden = comptime std.mem.startsWith(u8, f_name, "_");
+            if (hidden) continue;
+            @field(state, f_name) = @field(opts, f_name);
+        }
+
+        return state;
     }
 
     pub fn deinit(self: *AppState) void {
         if (self.disk_image_path) |ptr| {
             self.gpa.free(ptr);
         }
-        self.gpa.free(self.fps_buf);
-        self.gpa.destroy(self.fps_len);
         self.* = undefined;
     }
 
@@ -55,8 +72,15 @@ pub const AppState = struct {
         log.debug("saved new path: {s}", .{p});
     }
 
-    pub fn update_fps(self: *AppState, fps: f64) !void {
-        self.fps = try std.fmt.bufPrint(self.fps_buf, "{d}", .{@min(999, @round(fps))});
-        self.fps_len.* = self.fps.len;
+    pub fn set_clicked(self: *AppState) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.was_pick_file_clicked = true;
+    }
+
+    pub fn set_unclicked(self: *AppState) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.was_pick_file_clicked = false;
     }
 };

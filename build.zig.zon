@@ -1,7 +1,9 @@
 .{
     .name = "zrec",
     .version = "0.0.0",
-    .dependencies = .{ },
+    .dependencies = .{ 
+        .raylib = .{ .path = "./src/gui/raylib" },
+    },
 
     .paths = .{
         "build.zig",
