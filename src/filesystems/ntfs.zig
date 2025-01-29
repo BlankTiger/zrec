@@ -14,19 +14,24 @@ pub const NTFS = struct {
     pub const Error =
         Allocator.Error
         || std.fs.File.ReadError
-        || error{ NotNTFS, InvalidJmpBoot };
+        || error{ NotNTFS, InvalidJmpBoot, UnimplementedCurrently };
 
-    pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
-        const buf = try alloc.alloc(u8, 10_000);
-        const read = try reader.read(buf);
-        const mem = buf[0..read];
+    pub fn init(alloc: Allocator, buf: []u8, reader: *Reader) Error!Self {
+        _ = alloc;
+        _ = buf;
+        _ = reader;
 
-        return Self {
-            .alloc = alloc,
-            .reader = reader,
-            .buf = buf,
-            .mem = mem,
-        };
+        return error.UnimplementedCurrently;
+
+        // const read = try reader.read(buf);
+        // const mem = buf[0..read];
+        //
+        // return Self {
+        //     .alloc = alloc,
+        //     .reader = reader,
+        //     .buf = buf,
+        //     .mem = mem,
+        // };
     }
 
     pub fn deinit(self: *Self) void {

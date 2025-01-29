@@ -13,6 +13,7 @@ pub const JPGRecoverer = filetypes.JPGRecoverer;
 pub const PNGRecoverer = filetypes.PNGRecoverer;
 
 pub const FilesystemHandler = filesystems.FilesystemHandler;
+pub const FsType = filesystems.FsType;
 
 test {
     std.testing.refAllDecls(@This());

@@ -1,5 +1,8 @@
 const std = @import("std");
 const config = @import("config");
+const lib = @import("zrec");
+const FilesystemHandler = lib.FilesystemHandler;
+const Filesystem = lib.FilesystemHandler.Filesystem;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.gui_main);
@@ -29,8 +32,30 @@ const GUI = struct {
     frame_arena: Allocator,
     frame_arena_state: *std.heap.ArenaAllocator,
     state: *AppState,
+
+    fs_state: FsState,
     path: ?[]u8 = null,
+    filename: ?[:0]u8 = null,
+
     show_msg_box: bool = false,
+
+    const FsState = struct {
+        gpa: Allocator,
+        fs_handler: FilesystemHandler,
+        fs: ?Filesystem = null,
+
+        fn init(gpa: Allocator) !FsState {
+            return .{
+                .gpa = gpa,
+                .fs_handler = try FilesystemHandler.init(gpa, "invalid path currently"),
+            };
+        }
+
+        fn deinit(self: *FsState) void {
+            self.fs_handler.deinit();
+            if (self.fs) |*fs| fs.deinit();
+        }
+    };
 
     pub fn init(gpa: Allocator) !GUI {
         const frame_arena_state = try gpa.create(std.heap.ArenaAllocator);
@@ -57,17 +82,21 @@ const GUI = struct {
             .frame_arena = frame_arena,
             .frame_arena_state = frame_arena_state,
             .state = state,
+            .fs_state = try FsState.init(gpa),
         };
     }
 
     pub fn deinit(self: *GUI) void {
         c.SDL_Quit();
+        r.UnloadFont(font);
         r.CloseWindow();
         self.state.deinit();
+        self.fs_state.deinit();
         self.gpa.destroy(self.state);
         self.frame_arena_state.deinit();
         self.gpa.destroy(self.frame_arena_state);
         if (self.path != null) self.gpa.free(self.path.?);
+        if (self.filename != null) self.gpa.free(self.filename.?);
         self.* = undefined;
     }
 
@@ -110,8 +139,7 @@ const GUI = struct {
             );
         }
 
-        if (self.path != null and !self.state.path_retrieved) self.gpa.free(self.path.?);
-        if (!self.state.path_retrieved) self.path = try self.state.get_path();
+        if (!self.state.path_retrieved) try self.handle_file_chosen();
         // necessary to push the event loop forward because main loop doesn't
         // run all the prerequisites of SDL3 and we wouldn't receive the callback
         // to the file picker without this
@@ -149,22 +177,70 @@ const GUI = struct {
                 @ptrCast(msg[0..]),
             );
         } else {
-            const txt: [:0]u8 = try self.frame_arena.allocSentinel(u8, self.path.?.len, 0);
-            @memcpy(txt, self.path.?);
-            const txt_size = r.MeasureTextEx(font, txt, 32, 2);
-            const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
-            // const y = @as(f32, @floatFromInt(@divFloor(self.state.height, @as(c_int, @intCast(2))))) - txt_size.y / 2;
-            r.DrawTextEx(
-                font,
-                txt,
-                .{
-                    .x = x,
-                    .y = 20,
-                },
-                32,
-                2,
-                r.WHITE
-            );
+            self.draw_filename();
+            try self.draw_fs_info();
         }
+    }
+
+    const filename_y = 20;
+    var text_line_h: f32 = 0;
+
+    fn draw_filename(self: GUI) void {
+        const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
+        text_line_h = txt_size.y;
+        const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
+        r.DrawTextEx(font, self.filename.?, .{ .x = x, .y = 20, }, 32, 2, r.SKYBLUE);
+    }
+
+    fn draw_fs_info(self: GUI) !void {
+        if (self.fs_state.fs) |fs| {
+            const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
+            r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
+            const fs_size = try std.fmt.allocPrintZ(self.frame_arena, "size: {d} bytes", .{fs.calc_size()});
+            r.DrawTextEx(font, fs_size, .{ .x = 10, .y = filename_y + 3 * text_line_h, }, 32, 2, r.WHITE);
+        } else {
+            r.DrawTextEx(font, "This file doesn't match any implemented filesystem", .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
+        }
+    }
+
+    fn draw_filetype_recovery_list(self: GUI) void {
+        if (!self.fs_state.fs) return;
+        // TODO: start here, build the list of choices with toggles
+        // const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
+        // const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
+        // r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
+    }
+
+    fn handle_file_chosen(self: *GUI) !void {
+        if (self.path != null) self.gpa.free(self.path.?);
+        if (self.filename != null) self.gpa.free(self.filename.?);
+        if (self.fs_state.fs) |*fs| {
+            fs.deinit();
+            self.fs_state.fs = null;
+        }
+
+        self.path = try self.state.get_path();
+        const p = self.path.?;
+
+        var filename_len: usize = 0;
+        var idx_filename_start: usize = 0;
+        const idx_of_slash = std.mem.lastIndexOf(u8, p, "/");
+        if (idx_of_slash == null) {
+            filename_len = p.len;
+            idx_filename_start = 0;
+        } else {
+            filename_len = p.len - idx_of_slash.? - 1;
+            idx_filename_start = idx_of_slash.? + 1;
+        }
+        self.filename = try self.gpa.allocSentinel(u8, filename_len, 0);
+        @memcpy(self.filename.?, p[idx_filename_start..]);
+
+        try self.fs_state.fs_handler.update_path(p);
+        log.debug("updated fs_handler file path to: {s}", .{p});
+        const fs = self.fs_state.fs_handler.determine_filesystem() catch |err| {
+            log.err("{any}", .{err});
+            return;
+        };
+        self.fs_state.fs = fs;
     }
 };

@@ -87,7 +87,7 @@ pub const MmapReader = struct {
         const stats = try posix.fstat(fd);
         const len: usize = @intCast(stats.size);
         const mem = switch (builtin.os.tag) {
-            .linux => try posix.mmap(null, len, posix.PROT.READ, .{ .TYPE = posix.system.MAP_TYPE.SHARED }, fd, 0),
+            .linux => try posix.mmap(null, len, posix.PROT.READ, .{ .TYPE = .SHARED }, fd, 0),
             .windows => try win.mmap(),
             else => unreachable,
         };

@@ -23,13 +23,12 @@ pub const FAT32 = struct {
     pub const Error =
         Allocator.Error
         || std.fs.File.ReadError
-        || error{ NotFAT32, InvalidJmpBoot };
+        || error{ NotFAT32, InvalidJmpBoot, FileTooSmall };
 
-    pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
-        const buf = try alloc.alloc(u8, 10*512);
+    pub fn init(alloc: Allocator, buf: []u8, reader: *Reader) Error!Self {
         const read = try reader.read(buf);
         // should at least have 9 sectors of 512 bytes each
-        assert(read > 9*SECTOR_SIZE);
+        if (read <= 9*SECTOR_SIZE) return error.FileTooSmall;
         const mem = buf[0..read];
 
         const bs = try parse_boot_sector(mem[0..BPB_START_OFFSET], mem[BPB_END_OFFSET..]);
@@ -51,7 +50,7 @@ pub const FAT32 = struct {
         var self: Self = .{
             .alloc = alloc,
             .reader = reader,
-            .buf = buf,
+            .buf = buf[0..],
             .filesystem = mem,
             .boot_sector = bs,
             .bios_parameter_block = bpb,
@@ -64,6 +63,17 @@ pub const FAT32 = struct {
     pub fn deinit(self: *Self) void {
         self.alloc.free(self.buf);
         self.* = undefined;
+    }
+
+    pub fn calc_size(self: Self) usize {
+        const bpb = &self.bios_parameter_block;
+        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
+        const fat_size = bpb.fat_size_32;
+        const total_sectors = bpb.total_sectors_32;
+        const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
+        const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
+        const size = bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector;
+        return size;
     }
 
     fn parse_fat(self: Self) ![]FileAllocationTable {

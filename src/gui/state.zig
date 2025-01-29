@@ -39,9 +39,7 @@ pub const AppState = struct {
     }
 
     pub fn deinit(self: *AppState) void {
-        if (self.disk_image_path) |ptr| {
-            self.gpa.free(ptr);
-        }
+        if (self.disk_image_path) |ptr| self.gpa.free(ptr);
         self.* = undefined;
     }
 
@@ -67,9 +65,10 @@ pub const AppState = struct {
             log.debug("freeing previous path: {s}", .{ptr});
             self.gpa.free(ptr);
         }
+
         self.disk_image_path = try self.gpa.dupe(u8, p);
         self.path_retrieved = false;
-        log.debug("saved new path: {s}", .{p});
+        log.debug("saved new path: {s}", .{self.disk_image_path.?});
     }
 
     pub fn set_clicked(self: *AppState) void {

@@ -23,7 +23,7 @@ pub const FilesystemHandler = struct {
         || error{ NoFilesystemMatch };
 
     pub fn init(alloc: Allocator, filepath: []const u8) Error!Self {
-        return Self {
+        return .{
             .alloc = alloc,
             .path = try alloc.dupe(u8, filepath),
             ._files = std.ArrayList(*std.fs.File).init(alloc),
@@ -45,7 +45,12 @@ pub const FilesystemHandler = struct {
         self.* = undefined;
     }
 
-    const Filesystem = union(enum) {
+    pub fn update_path(self: *Self, new_path: []const u8) Allocator.Error!void {
+        self.alloc.free(self.path);
+        self.path = try self.alloc.dupe(u8, new_path);
+    }
+
+    pub const Filesystem = union(enum) {
         fat32: FAT32,
         ntfs: NTFS,
         // ext4: EXT4,
@@ -59,12 +64,27 @@ pub const FilesystemHandler = struct {
             }
             self.* = undefined;
         }
+
+        pub fn name(self: Filesystem) [:0]const u8 {
+            return @tagName(self);
+        }
+
+        pub fn calc_size(self: Filesystem) usize {
+            return switch (self) {
+                .fat32 => |*fat32| fat32.calc_size(),
+                else => unreachable,
+            };
+        }
     };
 
     /// Caller must call deinit on the resulting Filesystem
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
-        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
-        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
+        const buf = try self.alloc.alloc(u8, 10000);
+
+        if (FAT32.init(self.alloc, buf, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
+        if (NTFS.init(self.alloc, buf, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
+
+        self.alloc.free(buf);
         return Error.NoFilesystemMatch;
     }
 
