@@ -13,7 +13,7 @@ const r = @cImport({
     @cInclude("raygui.h");
 });
 
-const font_data = @embedFile("./IosevkaNerdFontMono-Regular.ttf");
+const font_data = @embedFile("./resources/IosevkaNerdFontMono-Regular.ttf");
 var font: r.Font = undefined;
 
 pub fn main() !void {
