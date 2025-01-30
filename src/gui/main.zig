@@ -3,6 +3,7 @@ const config = @import("config");
 const lib = @import("zrec");
 const FilesystemHandler = lib.FilesystemHandler;
 const Filesystem = lib.FilesystemHandler.Filesystem;
+const Filetypes = lib.Filetypes;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.gui_main);
@@ -39,20 +40,53 @@ const GUI = struct {
 
     show_msg_box: bool = false,
 
+    scroll_index: c_int = 0,
+    active: bool = false,
+
     const FsState = struct {
         gpa: Allocator,
         fs_handler: FilesystemHandler,
         fs: ?Filesystem = null,
+        chosen_filetypes: CFTypeHashMap,
+
+        const CFTypeHashMap = std.HashMap([:0]const u8, bool, CStringContext, std.hash_map.default_max_load_percentage);
+        const CStringContext = struct {
+            pub fn hash(self: @This(), s: [:0]const u8) u64 {
+                _ = self;
+                return std.hash_map.hashString(s);
+            }
+
+            pub fn eql(self: @This(), a: [:0]const u8, b: [:0]const u8) bool {
+                _ = self;
+                return std.hash_map.eqlString(a, b);
+            }
+        };
+
+        const DType = [Filetypes.types.len]struct{[:0]const u8, bool};
+        const data: DType = blk: {
+            var d: DType = undefined;
+            for (Filetypes.types, 0..) |t, idx| {
+                d[idx] = .{ t, false };
+            }
+            break :blk d;
+        };
+
 
         fn init(gpa: Allocator) !FsState {
+            var ftypes = CFTypeHashMap.init(gpa);
+            for (data) |kv| {
+                try ftypes.put(kv[0], kv[1]);
+            }
             return .{
                 .gpa = gpa,
                 .fs_handler = try FilesystemHandler.init(gpa, "invalid path currently"),
+                .chosen_filetypes = ftypes,
             };
         }
 
         fn deinit(self: *FsState) void {
             self.fs_handler.deinit();
+            self.chosen_filetypes.deinit();
             if (self.fs) |*fs| fs.deinit();
         }
     };
@@ -67,10 +101,19 @@ const GUI = struct {
         r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
         r.InitWindow(state.width, state.height, "zrec");
         // NOTE: font HAS TO BE loaded after InitWindow (wasted hours counter: 3)
-        font = r.LoadFontFromMemory(".ttf", @ptrCast(font_data), font_data.len, 32, 0, 1000);
         r.SetTargetFPS(config.fps);
-        r.GuiSetStyle(r.DEFAULT, r.TEXT_SIZE, 32);
-        r.GuiSetFont(font);
+        {
+            font = r.LoadFontFromMemory(".ttf", @ptrCast(font_data), font_data.len, 32, 0, 1000);
+            r.GuiSetStyle(r.DEFAULT, r.TEXT_SIZE, 32);
+            r.GuiSetFont(font);
+            r.GuiSetFont(font);
+            r.GuiSetStyle(r.BUTTON, r.TEXT_ALIGNMENT, r.TEXT_ALIGN_MIDDLE);
+            r.GuiSetStyle(r.BUTTON, r.BORDER_WIDTH, 10);
+            r.GuiSetStyle(r.BUTTON, r.BORDER_COLOR_PRESSED, r.ColorToInt(r.BLUE));
+            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_NORMAL, r.ColorToInt(r.BLACK));
+            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_FOCUSED, r.ColorToInt(r.BLACK));
+            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_PRESSED, r.ColorToInt(r.BLACK));
+        }
 
         if (!c.SDL_Init(c.SDL_INIT_VIDEO)) {
             log.err("couldnt init SDL", .{});
@@ -126,8 +169,8 @@ const GUI = struct {
             try self.state.save_path(path);
         }
 
-        if (!self.state.was_pick_file_clicked and self.state.pick_file_clicked == 1) {
-            self.state.set_clicked();
+        if (self.state.pick_file_clicked.load(.monotonic)) {
+            self.state.pick_file_clicked.store(false, .monotonic);
             c.SDL_ShowOpenFileDialog(
                 &_file_dialog_callback,
                 @as(*anyopaque, @ptrCast(self.state)),
@@ -137,6 +180,10 @@ const GUI = struct {
                 null,
                 false
             );
+        }
+
+        if (self.state.recover_clicked.load(.monotonic)) {
+            log.debug("huhhhh", .{});
         }
 
         if (!self.state.path_retrieved) try self.handle_file_chosen();
@@ -149,66 +196,13 @@ const GUI = struct {
     fn _file_dialog_callback(app_state: ?*anyopaque, filelist: [*c]const [*c]const u8, filter: c_int) callconv(.C) void {
         _ = filter;
         const s = @as(*AppState, @alignCast(@ptrCast(app_state)));
-        s.set_unclicked();
+        s.pick_file_clicked.store(false, .monotonic);
         const file = filelist[0];
         if (file == null) return;
         const path = file[0..std.mem.len(file)];
         log.debug("saved path", .{});
         s.save_path(path) catch @panic("huhh");
         log.debug("saved path", .{});
-    }
-
-    fn draw(self: *GUI) !void {
-        r.BeginDrawing();
-        defer r.EndDrawing();
-        defer r.ClearBackground(r.BLACK);
-
-        if (self.path == null) {
-            const msg = "Drop a disk image file";
-            r.GuiSetFont(font);
-            r.GuiSetStyle(r.BUTTON, r.TEXT_ALIGNMENT, r.TEXT_ALIGN_MIDDLE);
-            r.GuiSetStyle(r.BUTTON, r.BORDER_WIDTH, 10);
-            r.GuiSetStyle(r.BUTTON, r.BORDER_COLOR_PRESSED, r.ColorToInt(r.BLUE));
-            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_NORMAL, r.ColorToInt(r.BLACK));
-            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_FOCUSED, r.ColorToInt(r.BLACK));
-            r.GuiSetStyle(r.BUTTON, r.BASE_COLOR_PRESSED, r.ColorToInt(r.BLACK));
-            self.state.pick_file_clicked = r.GuiButton(
-                .{ .x = 10, .y = 10, .width = @floatFromInt(self.state.width - 20), .height = @floatFromInt(self.state.height - 20) },
-                @ptrCast(msg[0..]),
-            );
-        } else {
-            self.draw_filename();
-            try self.draw_fs_info();
-        }
-    }
-
-    const filename_y = 20;
-    var text_line_h: f32 = 0;
-
-    fn draw_filename(self: GUI) void {
-        const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
-        text_line_h = txt_size.y;
-        const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
-        r.DrawTextEx(font, self.filename.?, .{ .x = x, .y = 20, }, 32, 2, r.SKYBLUE);
-    }
-
-    fn draw_fs_info(self: GUI) !void {
-        if (self.fs_state.fs) |fs| {
-            const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
-            r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
-            const fs_size = try std.fmt.allocPrintZ(self.frame_arena, "size: {d} bytes", .{fs.calc_size()});
-            r.DrawTextEx(font, fs_size, .{ .x = 10, .y = filename_y + 3 * text_line_h, }, 32, 2, r.WHITE);
-        } else {
-            r.DrawTextEx(font, "This file doesn't match any implemented filesystem", .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
-        }
-    }
-
-    fn draw_filetype_recovery_list(self: GUI) void {
-        if (!self.fs_state.fs) return;
-        // TODO: start here, build the list of choices with toggles
-        // const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
-        // const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
-        // r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
     }
 
     fn handle_file_chosen(self: *GUI) !void {
@@ -242,5 +236,87 @@ const GUI = struct {
             return;
         };
         self.fs_state.fs = fs;
+
+        // TODO: move this over to a function that sets state for the second screen
+        // after the file is chosen
+        r.GuiSetStyle(r.BUTTON, r.BORDER_WIDTH, 2);
+    }
+
+    fn draw(self: *GUI) !void {
+        r.BeginDrawing();
+        defer r.EndDrawing();
+        defer r.ClearBackground(r.BLACK);
+
+        if (self.path == null) {
+            const msg = "Drop a disk image file";
+            const pick_file_clicked = r.GuiButton(
+                .{ .x = 10, .y = 10, .width = @floatFromInt(self.state.width - 20), .height = @floatFromInt(self.state.height - 20) },
+                @ptrCast(msg[0..]),
+            );
+            if (pick_file_clicked == 1) self.state.pick_file_clicked.store(true, .monotonic);
+        } else {
+            self.draw_filename();
+            try self.draw_fs_info();
+            if (self.fs_state.fs) |_| {
+                self.draw_filetype_recovery_list();
+                self.draw_make_it_happen_btn();
+            }
+        }
+    }
+
+    const filename_y = 20;
+    var text_line_h: f32 = 0;
+
+    fn draw_filename(self: *const GUI) void {
+        const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
+        text_line_h = txt_size.y;
+        const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
+        r.DrawTextEx(font, self.filename.?, .{ .x = x, .y = 20, }, 32, 2, r.SKYBLUE);
+    }
+
+    fn draw_fs_info(self: *const GUI) !void {
+        if (self.fs_state.fs) |fs| {
+            const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
+            r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
+            const fs_size = try std.fmt.allocPrintZ(self.frame_arena, "size: {d} bytes", .{fs.calc_size()});
+            r.DrawTextEx(font, fs_size, .{ .x = 10, .y = filename_y + 3 * text_line_h, }, 32, 2, r.WHITE);
+        } else {
+            const txt = "This file doesn't match any implemented filesystem";
+            const txt_size = r.MeasureTextEx(font, txt, 32, 2);
+            const x = @as(f32, @floatFromInt(self.state.width)) / 2 - txt_size.x / 2;
+            r.DrawTextEx(font, txt, .{ .x = x, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
+        }
+    }
+
+    var box_x: f32 = 0;
+    const box_x_offset: f32 = 450;
+    const box_width: f32 = box_x_offset - 50;
+    var box_y: f32 = 0;
+    const box_y_offset = 200;
+    fn draw_filetype_recovery_list(self: *GUI) void {
+        if (self.fs_state.fs == null) return;
+
+        // TODO: calculate the height based on the amount of choices, optionally turn this into a listview
+        box_x = @as(f32, @floatFromInt(self.state.width)) - box_x_offset;
+        box_y = text_line_h * 3;
+        _ = r.GuiGroupBox(.{ .x = box_x, .y = box_y, .width = box_width, .height = @as(f32, @floatFromInt(self.state.height)) - box_y_offset }, "Choose filetypes to recover");
+
+        var k_iter = self.fs_state.chosen_filetypes.keyIterator();
+        var idx: usize = 0;
+        while (k_iter.next()) |k| : (idx += 1) {
+            const value_ptr = self.fs_state.chosen_filetypes.getPtr(k.*).?;
+            _ = r.GuiCheckBox(.{ .x = box_x + 20, .y = box_y + text_line_h + @as(f32, @floatFromInt(idx)) * (1.2 * text_line_h), .width = text_line_h, .height = text_line_h }, k.*, value_ptr);
+            // log.debug("{s}: {any}", .{k.*, value_ptr.*});
+        }
+    }
+
+    fn draw_make_it_happen_btn(self: *GUI) void {
+        const width = 300;
+        const y = box_y + @as(f32, @floatFromInt(self.state.height)) - box_y_offset + 25;
+        const recover_clicked = r.GuiButton(
+            .{ .x = box_x + box_width / 2 - width / 2, .y = y, .width = width, .height = 50 },
+            "Make it happen",
+        );
+        if (recover_clicked == 1) self.state.recover_clicked.store(true, .monotonic);
     }
 };

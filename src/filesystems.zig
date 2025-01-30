@@ -75,6 +75,7 @@ pub const FilesystemHandler = struct {
                 else => unreachable,
             };
         }
+
     };
 
     /// Caller must call deinit on the resulting Filesystem
@@ -90,9 +91,12 @@ pub const FilesystemHandler = struct {
 
     pub fn create_new_reader(self: *Self) Error!*Reader {
         const f = try self.alloc.create(std.fs.File);
+        errdefer self.alloc.destroy(f);
         f.* = try std.fs.cwd().openFile(self.path, .{});
         try self._files.append(f);
+
         const custom_reader = try self.alloc.create(Reader);
+        errdefer self.alloc.destroy(custom_reader);
         custom_reader.* = try Reader.init(f);
         try self._readers.append(custom_reader);
         return custom_reader;
@@ -151,4 +155,12 @@ test "fresh fat32 is read as expected with all backup info in sector 6" {
         },
         else => unreachable
     }
+}
+
+test "create new reader cleans up everything when somethings goes wrong (file access err)" {
+    var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
+    defer fs_handler.deinit();
+    try testing.expectError(error.FileNotFound, fs_handler.create_new_reader());
+    try fs_handler.update_path(FAT32_PATH);
+
 }

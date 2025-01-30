@@ -1,17 +1,19 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.app_state);
+pub const ABool = std.atomic.Value(bool);
 
 pub const AppState = struct {
     pub const Settings = struct {
         gpa: Allocator,
+        // TODO: convert this to f32 everytime when writing it instead of everywhere its used, pls, thx
         width: c_int = 1200,
         height: c_int = 700,
         should_quit: bool = false,
         disk_image_path: ?[]u8 = null,
         path_retrieved: bool = true,
-        pick_file_clicked: c_int = 0,
-        was_pick_file_clicked: bool = false,
+        pick_file_clicked: ABool = ABool.init(false),
+        recover_clicked: ABool = ABool.init(false),
         mutex: std.Thread.Mutex = .{},
     };
 
@@ -21,8 +23,8 @@ pub const AppState = struct {
     should_quit: bool,
     disk_image_path: ?[]u8,
     path_retrieved: bool,
-    pick_file_clicked: c_int,
-    was_pick_file_clicked: bool,
+    pick_file_clicked: ABool,
+    recover_clicked: ABool,
     mutex: std.Thread.Mutex,
 
     pub fn init(opts: Settings) !AppState {
@@ -69,17 +71,5 @@ pub const AppState = struct {
         self.disk_image_path = try self.gpa.dupe(u8, p);
         self.path_retrieved = false;
         log.debug("saved new path: {s}", .{self.disk_image_path.?});
-    }
-
-    pub fn set_clicked(self: *AppState) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        self.was_pick_file_clicked = true;
-    }
-
-    pub fn set_unclicked(self: *AppState) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        self.was_pick_file_clicked = false;
     }
 };

@@ -11,6 +11,7 @@ pub const MmapReader = reader.MmapReader;
 pub const Reader = MmapReader;
 pub const JPGRecoverer = filetypes.JPGRecoverer;
 pub const PNGRecoverer = filetypes.PNGRecoverer;
+pub const Filetypes = filetypes.Filetypes;
 
 pub const FilesystemHandler = filesystems.FilesystemHandler;
 
