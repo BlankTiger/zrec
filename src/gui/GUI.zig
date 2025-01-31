@@ -281,14 +281,29 @@ fn draw_filetype_recovery_list(self: *GUI) void {
     // TODO: calculate the height based on the amount of choices, optionally turn this into a listview
     box_x = self.state.width - box_x_offset;
     box_y = text_line_h * 3;
-    _ = r.GuiGroupBox(.{ .x = box_x, .y = box_y, .width = box_width, .height = self.state.height - box_y_offset }, "Choose filetypes to recover");
+    _ = r.GuiGroupBox(
+        .{
+            .x = box_x,
+            .y = box_y,
+            .width = box_width,
+            .height = self.state.height - box_y_offset
+        },
+        "Choose filetypes to recover"
+    );
 
     var k_iter = self.fs_state.chosen_filetypes.keyIterator();
     var idx: usize = 0;
     while (k_iter.next()) |k| : (idx += 1) {
         const value_ptr = self.fs_state.chosen_filetypes.getPtr(k.*).?;
-        _ = r.GuiCheckBox(.{ .x = box_x + 20, .y = box_y + text_line_h + @as(f32, @floatFromInt(idx)) * (1.2 * text_line_h), .width = text_line_h, .height = text_line_h }, k.*, value_ptr);
-        // log.debug("{s}: {any}", .{k.*, value_ptr.*});
+        _ = r.GuiCheckBox(
+            .{
+                .x = box_x + 20,
+                .y = box_y + text_line_h + @as(f32, @floatFromInt(idx)) * (1.2 * text_line_h),
+                .width = text_line_h,
+                .height = text_line_h
+            },
+            k.*, value_ptr
+        );
     }
 }
 
