@@ -99,7 +99,7 @@ const GUI = struct {
         state.* = try AppState.init(.{ .gpa = gpa });
 
         r.SetConfigFlags(r.FLAG_WINDOW_RESIZABLE);
-        r.InitWindow(state.width, state.height, "zrec");
+        r.InitWindow(@intFromFloat(state.width), @intFromFloat(state.height), "zrec");
         // NOTE: font HAS TO BE loaded after InitWindow (wasted hours counter: 3)
         r.SetTargetFPS(config.fps);
         {
@@ -154,8 +154,8 @@ const GUI = struct {
 
     fn update(self: *GUI) !void {
         if (r.IsWindowResized()) {
-            self.state.width = r.GetScreenWidth();
-            self.state.height = r.GetScreenHeight();
+            self.state.width = @floatFromInt(r.GetScreenWidth());
+            self.state.height = @floatFromInt(r.GetScreenHeight());
         }
 
         if (r.IsFileDropped()) {
@@ -250,7 +250,7 @@ const GUI = struct {
         if (self.path == null) {
             const msg = "Drop a disk image file";
             const pick_file_clicked = r.GuiButton(
-                .{ .x = 10, .y = 10, .width = @floatFromInt(self.state.width - 20), .height = @floatFromInt(self.state.height - 20) },
+                .{ .x = 10, .y = 10, .width = self.state.width - 20, .height = self.state.height - 20 },
                 @ptrCast(msg[0..]),
             );
             if (pick_file_clicked == 1) self.state.pick_file_clicked.store(true, .monotonic);
@@ -270,7 +270,7 @@ const GUI = struct {
     fn draw_filename(self: *const GUI) void {
         const txt_size = r.MeasureTextEx(font, self.filename.?, 32, 2);
         text_line_h = txt_size.y;
-        const x = @max(0, @as(f32, @floatFromInt(@divFloor(self.state.width, @as(c_int, @intCast(2))))) - txt_size.x / 2);
+        const x = @max(0, self.state.width / 2 - txt_size.x / 2);
         r.DrawTextEx(font, self.filename.?, .{ .x = x, .y = 20, }, 32, 2, r.SKYBLUE);
     }
 
@@ -283,7 +283,7 @@ const GUI = struct {
         } else {
             const txt = "This file doesn't match any implemented filesystem";
             const txt_size = r.MeasureTextEx(font, txt, 32, 2);
-            const x = @as(f32, @floatFromInt(self.state.width)) / 2 - txt_size.x / 2;
+            const x = self.state.width / 2 - txt_size.x / 2;
             r.DrawTextEx(font, txt, .{ .x = x, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
         }
     }
@@ -297,9 +297,9 @@ const GUI = struct {
         if (self.fs_state.fs == null) return;
 
         // TODO: calculate the height based on the amount of choices, optionally turn this into a listview
-        box_x = @as(f32, @floatFromInt(self.state.width)) - box_x_offset;
+        box_x = self.state.width - box_x_offset;
         box_y = text_line_h * 3;
-        _ = r.GuiGroupBox(.{ .x = box_x, .y = box_y, .width = box_width, .height = @as(f32, @floatFromInt(self.state.height)) - box_y_offset }, "Choose filetypes to recover");
+        _ = r.GuiGroupBox(.{ .x = box_x, .y = box_y, .width = box_width, .height = self.state.height - box_y_offset }, "Choose filetypes to recover");
 
         var k_iter = self.fs_state.chosen_filetypes.keyIterator();
         var idx: usize = 0;
@@ -312,7 +312,7 @@ const GUI = struct {
 
     fn draw_make_it_happen_btn(self: *GUI) void {
         const width = 300;
-        const y = box_y + @as(f32, @floatFromInt(self.state.height)) - box_y_offset + 25;
+        const y = box_y + self.state.height - box_y_offset + 25;
         const recover_clicked = r.GuiButton(
             .{ .x = box_x + box_width / 2 - width / 2, .y = y, .width = width, .height = 50 },
             "Make it happen",

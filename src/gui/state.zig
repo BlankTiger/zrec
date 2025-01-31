@@ -6,9 +6,8 @@ pub const ABool = std.atomic.Value(bool);
 pub const AppState = struct {
     pub const Settings = struct {
         gpa: Allocator,
-        // TODO: convert this to f32 everytime when writing it instead of everywhere its used, pls, thx
-        width: c_int = 1200,
-        height: c_int = 700,
+        width: f32 = 1200,
+        height: f32 = 700,
         should_quit: bool = false,
         disk_image_path: ?[]u8 = null,
         path_retrieved: bool = true,
@@ -18,8 +17,8 @@ pub const AppState = struct {
     };
 
     gpa: Allocator,
-    width: c_int,
-    height: c_int,
+    width: f32,
+    height: f32,
     should_quit: bool,
     disk_image_path: ?[]u8,
     path_retrieved: bool,
