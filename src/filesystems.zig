@@ -59,8 +59,7 @@ pub const FilesystemHandler = struct {
 
         pub fn deinit(self: *Filesystem) void {
             switch (self.*) {
-                .fat32 => |*fat32| fat32.deinit(),
-                .ntfs => |*ntfs| ntfs.deinit(),
+                inline else => |*it| it.deinit(),
             }
             self.* = undefined;
         }
@@ -71,8 +70,7 @@ pub const FilesystemHandler = struct {
 
         pub fn calc_size(self: Filesystem) usize {
             return switch (self) {
-                .fat32 => |*fat32| fat32.calc_size(),
-                else => unreachable,
+                inline else => |*it| it.calc_size(),
             };
         }
 

@@ -115,7 +115,6 @@ pub const MmapReader = struct {
             return bytes_left;
         }
 
-        log.debug("{d}, {d}", .{dest.len, self.mem[self.idx..self.idx+dest.len].len});
         @memcpy(dest, self.mem[self.idx..self.idx+dest.len]);
         self.idx += dest.len;
         return dest.len;
