@@ -39,13 +39,6 @@ pub const FAT32 = struct {
         const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
         const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
         if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
-        // TODO: start here, image size differs
-        log.debug("root_dir_sectors: {d}", .{root_dir_sectors});
-        log.debug("sectors_per_cluster: {d}", .{bpb.sectors_per_cluster});
-        log.debug("count_of_clusters: {d}", .{count_of_clusters});
-        log.debug("image size: {d}", .{bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector});
-        log.debug("bytes_per_sector: {d}", .{bpb.bytes_per_sector});
-        log.debug("root_cluster: {d}", .{bpb.root_cluster});
 
         var self: Self = .{
             .alloc = alloc,
