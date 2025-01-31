@@ -81,18 +81,24 @@ fn inner_mmap_reader_shared(mem: MmapReader.MemT) !void {
 
 const optimization_mode = @import("builtin").mode;
 
-// TODO: also test memory footprint
 test "single core" {
     const prev_log_level = testing.log_level;
     testing.log_level = .info;
     defer testing.log_level = prev_log_level;
     const count = 10;
     const core_count = 1;
-    const time_res_read = try utils.measure_avg_time(run_read_reader, .{core_count}, count, true);
-    const time_res_mmap = try utils.measure_avg_time(run_mmap_reader, .{core_count}, count, true);
+
+    const time_res_read = try utils.measure_time_and_mem(run_read_reader, .{core_count}, count, true);
+    while (!utils.results_saved.load(.monotonic)) {}
+    const mem_res_read = utils.mem_measurements;
+
+    const time_res_mmap = try utils.measure_time_and_mem(run_mmap_reader, .{core_count}, count, true);
+    while (!utils.results_saved.load(.monotonic)) {}
+    const mem_res_mmap = utils.mem_measurements;
+
     log.info("optimization mode: {any}", .{optimization_mode});
-    log.info("read (single core): avg={d}s, std_dev={d}s", .{time_res_read.avg / std.time.ns_per_s, time_res_read.std_dev / std.time.ns_per_s});
-    log.info("mmap (single core): avg={d}s, std_dev={d}s", .{time_res_mmap.avg / std.time.ns_per_s, time_res_mmap.std_dev / std.time.ns_per_s});
+    log.info("read (single core): avg={d}s, std_dev={d}s, max mem used={d} pages, avg mem used={d} pages", .{time_res_read.avg / std.time.ns_per_s, time_res_read.std_dev / std.time.ns_per_s, mem_res_read.max, mem_res_read.avg});
+    log.info("mmap (single core): avg={d}s, std_dev={d}s, max mem used={d} pages, avg mem used={d} pages", .{time_res_mmap.avg / std.time.ns_per_s, time_res_mmap.std_dev / std.time.ns_per_s, mem_res_mmap.max, mem_res_mmap.avg});
 
     const values_a = try testing.allocator.alloc(f64, time_res_read.time.len);
     const values_b = try testing.allocator.alloc(f64, time_res_mmap.time.len);
@@ -119,13 +125,23 @@ test "multi core" {
     defer testing.log_level = prev_log_level;
     const count = 10;
     const core_count = try std.Thread.getCpuCount();
-    const time_res_read = try utils.measure_avg_time(run_read_reader, .{core_count}, count, true);
-    const time_res_mmap = try utils.measure_avg_time(run_mmap_reader, .{core_count}, count, true);
-    const time_res_mmap_shared = try utils.measure_avg_time(run_mmap_reader_shared, .{core_count}, count, true);
+
+    const time_res_read = try utils.measure_time_and_mem(run_read_reader, .{core_count}, count, true);
+    while (!utils.results_saved.load(.monotonic)) {}
+    const mem_res_read = utils.mem_measurements;
+
+    const time_res_mmap = try utils.measure_time_and_mem(run_mmap_reader, .{core_count}, count, true);
+    while (!utils.results_saved.load(.monotonic)) {}
+    const mem_res_mmap = utils.mem_measurements;
+
+    const time_res_mmap_shared = try utils.measure_time_and_mem(run_mmap_reader_shared, .{core_count}, count, true);
+    while (!utils.results_saved.load(.monotonic)) {}
+    const mem_res_mmap_shared = utils.mem_measurements;
+
     log.info("optimization mode: {any}", .{optimization_mode});
-    log.info("read (multi core, {d} threads): avg={d}s, std_dev={d}s", .{core_count, time_res_read.avg / std.time.ns_per_s, time_res_read.std_dev / std.time.ns_per_s});
-    log.info("mmap (multi core, {d} threads): avg={d}s, std_dev={d}s", .{core_count, time_res_mmap.avg / std.time.ns_per_s, time_res_mmap.std_dev / std.time.ns_per_s});
-    log.info("mmap (multi core, {d} threads, mmap is shared): avg={d}s, std_dev={d}s", .{core_count, time_res_mmap_shared.avg / std.time.ns_per_s, time_res_mmap_shared.std_dev / std.time.ns_per_s});
+    log.info("read (multi core, {d} threads): avg={d}s, std_dev={d}s, max used mem={d} pages, avg used mem={d} pages", .{core_count, time_res_read.avg / std.time.ns_per_s, time_res_read.std_dev / std.time.ns_per_s, mem_res_read.max, mem_res_read.avg});
+    log.info("mmap (multi core, {d} threads): avg={d}s, std_dev={d}s, max used mem={d} pages, avg used mem={d} pages", .{core_count, time_res_mmap.avg / std.time.ns_per_s, time_res_mmap.std_dev / std.time.ns_per_s, mem_res_mmap.max, mem_res_mmap.avg});
+    log.info("mmap (multi core, {d} threads, mmap is shared): avg={d}s, std_dev={d}s, max used mem={d} pages, avg used mem={d} pages", .{core_count, time_res_mmap_shared.avg / std.time.ns_per_s, time_res_mmap_shared.std_dev / std.time.ns_per_s, mem_res_mmap_shared.max, mem_res_mmap_shared.avg});
 
     const values_a = try testing.allocator.alloc(f64, time_res_read.time.len);
     const values_b = try testing.allocator.alloc(f64, time_res_mmap.time.len);

@@ -115,7 +115,7 @@ pub fn std_dev(T: type, values: []const T) f64 {
     return @sqrt(sum / n);
 }
 
-pub fn measure_avg_time(comptime f: anytype, args: anytype, comptime count: usize, comptime with_res: bool) anyerror!TR: {
+pub fn measure_time_and_mem(comptime f: anytype, args: anytype, comptime count: usize, comptime with_res: bool) anyerror!TR: {
     const RetType = if (with_res) @typeInfo(@TypeOf(f)).Fn.return_type.? else null;
     break :TR TimeResult(count, RetType);
 } {
@@ -125,6 +125,11 @@ pub fn measure_avg_time(comptime f: anytype, args: anytype, comptime count: usiz
     const ret_t_null = RetType == null;
     var arr_time: [count]u64 = undefined;
     var arr_res: if (!ret_t_null) [count]RetType.? else void = undefined;
+
+    const mem_thread = try std.Thread.spawn(.{}, monitor_mem_avg_and_max, .{3});
+    benchmark_running.store(true, .monotonic);
+    results_saved.store(false, .monotonic);
+
     var timer = try Timer.start();
     for (0..count) |idx| {
         const res = @call(.auto, f, args);
@@ -133,5 +138,42 @@ pub fn measure_avg_time(comptime f: anytype, args: anytype, comptime count: usiz
         arr_time[idx] = t;
     }
 
+    benchmark_running.store(false, .monotonic);
+    mem_thread.join();
+
     return TimeResultType.init(arr_time, arr_res);
+}
+
+const ABool = std.atomic.Value(bool);
+var benchmark_running: ABool = ABool.init(true);
+pub var results_saved: ABool = ABool.init(false);
+pub var mem_measurements: struct { max: usize, avg: usize } = undefined;
+
+fn monitor_mem_avg_and_max(ms_between_measurements: usize) !void {
+    var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var max: usize = 0;
+    var measurement_count: usize = 0;
+    const max_measurements_count = 20000;
+    var measurements: [max_measurements_count]usize = undefined;
+    while (benchmark_running.load(.monotonic) and measurement_count < max_measurements_count) : (measurement_count += 1) {
+        defer _ = arena_state.reset(.free_all);
+        const f = try std.fs.openFileAbsolute("/proc/self/statm", .{});
+        defer f.close();
+
+        const content = try f.readToEndAlloc(arena, 200000);
+        var it = std.mem.splitAny(u8, content, " ");
+        const mem_used = try std.fmt.parseInt(usize, it.next().?, 10);
+        measurements[measurement_count] = mem_used;
+        max = @max(max, mem_used);
+        std.time.sleep(std.time.ns_per_ms * ms_between_measurements);
+    }
+
+    var avg: usize = 0;
+    for (0..measurement_count) |idx| avg += measurements[idx];
+    avg = avg / measurement_count;
+    mem_measurements = .{ .avg = avg, .max = max };
+    results_saved.store(true, .monotonic);
 }
