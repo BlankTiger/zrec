@@ -139,24 +139,6 @@ fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
     return true;
 }
 
-// TODO: move this to fat.zig and make it more fat32 specific
-test "fresh fat32 is read as expected with all backup info in sector 6" {
-    var fs_handler = try FilesystemHandler.init(t_alloc, FAT32_PATH);
-    defer fs_handler.deinit();
-    var fs = try fs_handler.determine_filesystem();
-    defer fs.deinit();
-
-    switch (fs) {
-        .fat32 => |fat32| {
-            const bkp_bs = try fat32.get_backup_boot_sector();
-            const bkp_bpb = fat32.get_backup_bios_parameter_block();
-            assert(custom_slice_and_int_eql(fat32.boot_sector, bkp_bs));
-            assert(custom_slice_and_int_eql(fat32.bios_parameter_block, bkp_bpb));
-        },
-        else => unreachable
-    }
-}
-
 test "create new reader cleans up everything when somethings goes wrong (file access err)" {
     var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
     defer fs_handler.deinit();
