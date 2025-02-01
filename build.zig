@@ -180,7 +180,7 @@ fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step)
 
 fn clean_step(b: *std.Build) *std.Build.Step {
     const clean = b.step("clean", "Clean app output");
-    const remove_output_dir = b.addRemoveDirTree("./output");
+    const remove_output_dir = b.addRemoveDirTree(b.path("./output"));
     const create_output_dir = b.addSystemCommand(&[_][]const u8{ "mkdir", "./output" });
     clean.dependOn(&remove_output_dir.step);
     clean.dependOn(&create_output_dir.step);
@@ -189,8 +189,8 @@ fn clean_step(b: *std.Build) *std.Build.Step {
 
 fn clean_all_step(b: *std.Build) void {
     const clean = b.step("clean-all", "Clean app output and filesystems");
-    const remove_output_dir = b.addRemoveDirTree("./output");
-    const remove_filesystems_dir = b.addRemoveDirTree("./filesystems");
+    const remove_output_dir = b.addRemoveDirTree(b.path("./output"));
+    const remove_filesystems_dir = b.addRemoveDirTree(b.path("./filesystems"));
     clean.dependOn(&remove_output_dir.step);
     clean.dependOn(&remove_filesystems_dir.step);
 }

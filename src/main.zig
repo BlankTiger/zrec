@@ -1,8 +1,9 @@
+const std = @import("std");
 const config = @import("config");
 const gui = @import("gui/main.zig");
 const tui = @import("tui/main.zig");
 
-pub const std_options = .{
+pub const std_options: std.Options = .{
     .log_level = switch (config.log_level) {
         .debug => .debug,
         .info => .info,

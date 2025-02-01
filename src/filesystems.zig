@@ -68,7 +68,7 @@ pub const FilesystemHandler = struct {
             return @tagName(self);
         }
 
-        pub fn calc_size(self: Filesystem) usize {
+        pub fn calc_size(self: Filesystem) f64 {
             return switch (self) {
                 inline else => |*it| it.calc_size(),
             };

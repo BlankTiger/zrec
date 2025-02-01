@@ -38,4 +38,9 @@ pub const NTFS = struct {
         self.alloc.free(self.buf);
         self.* = undefined;
     }
+
+    pub fn calc_size(self: Self) f64 {
+        _ = self;
+        return 0;
+    }
 };

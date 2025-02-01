@@ -161,7 +161,7 @@ const Tests = struct {
         @"input/jpgs/example4.jpg",
 
         const paths = p: {
-            const self_type_info = @typeInfo(TestExample).Enum;
+            const self_type_info = @typeInfo(TestExample).@"enum";
             const len = self_type_info.fields.len;
             var ps: [len][]const u8 = undefined;
             for (self_type_info.fields, 0..) |f, idx| {

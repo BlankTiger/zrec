@@ -10,7 +10,7 @@ jobs:
           fetch-depth: 2
       - uses: mlugg/setup-zig@v1
         with:
-          version: 0.13.0
+          version: 0.14.0-dev.3012+3348478fc
       - run: echo "Benchmark for current changes" && rm -rf /home/runner/.cache/zig
       - run: zig build bench -Doptimize=Debug --summary all
       - run: zig build bench -Doptimize=ReleaseSafe --summary all

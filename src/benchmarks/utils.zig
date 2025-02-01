@@ -69,7 +69,7 @@ fn calc_s_squared(T: type, values_a: []const T, avg_a: f64, values_b: []const T,
     var sum_a: f64 = 0;
     var sum_b: f64 = 0;
     switch (@typeInfo(T)) {
-        .Int => {
+        .int => {
             for (values_a) |a| {
                 const _a: f64 = @floatFromInt(a);
                 sum_a += std.math.pow(f64, _a - avg_a, 2);
@@ -79,7 +79,7 @@ fn calc_s_squared(T: type, values_a: []const T, avg_a: f64, values_b: []const T,
                 sum_b += std.math.pow(f64, _b - avg_b, 2);
             }
         },
-        .Float => {
+        .float => {
             for (values_a) |a| sum_a += std.math.pow(f64, a - avg_a, 2);
             for (values_b) |b| sum_b += std.math.pow(f64, b - avg_b, 2);
         },
@@ -95,8 +95,8 @@ pub fn average(T: type, values: []const T) f64 {
     var sum: T = 0;
     for (values) |v| sum += v;
     const nom: f64 = switch (@typeInfo(T)) {
-        .Int => @floatFromInt(sum),
-        .Float => sum,
+        .int => @floatFromInt(sum),
+        .float => sum,
         else => unreachable,
     };
     const den: f64 = @floatFromInt(values.len);
@@ -107,8 +107,8 @@ pub fn std_dev(T: type, values: []const T) f64 {
     const avg = average(T, values);
     var sum: f64 = 0;
     switch (@typeInfo(T)) {
-        .Int => { for (values) |v| sum += std.math.pow(f64, @as(f64, @floatFromInt(v)) - avg, 2); },
-        .Float => { for (values) |v| sum += std.math.pow(f64, v - avg, 2); },
+        .int => { for (values) |v| sum += std.math.pow(f64, @as(f64, @floatFromInt(v)) - avg, 2); },
+        .float => { for (values) |v| sum += std.math.pow(f64, v - avg, 2); },
         else => unreachable,
     }
     const n: f64 = @floatFromInt(values.len);
@@ -116,10 +116,10 @@ pub fn std_dev(T: type, values: []const T) f64 {
 }
 
 pub fn measure_time_and_mem(comptime f: anytype, args: anytype, comptime count: usize, comptime with_res: bool) anyerror!TR: {
-    const RetType = if (with_res) @typeInfo(@TypeOf(f)).Fn.return_type.? else null;
+    const RetType = if (with_res) @typeInfo(@TypeOf(f)).@"fn".return_type.? else null;
     break :TR TimeResult(count, RetType);
 } {
-    const RetType: ?type = if (with_res) @typeInfo(@TypeOf(f)).Fn.return_type.? else null;
+    const RetType: ?type = if (with_res) @typeInfo(@TypeOf(f)).@"fn".return_type.? else null;
     const TimeResultType = TimeResult(count, RetType);
 
     const ret_t_null = RetType == null;

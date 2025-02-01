@@ -58,7 +58,7 @@ pub const FAT32 = struct {
         self.* = undefined;
     }
 
-    pub fn calc_size(self: Self) usize {
+    pub fn calc_size(self: Self) f64 {
         const bpb = &self.bios_parameter_block;
         const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
         const fat_size = bpb.fat_size_32;
@@ -66,7 +66,7 @@ pub const FAT32 = struct {
         const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
         const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
         const size = bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector;
-        return size;
+        return @floatFromInt(size);
     }
 
     fn parse_fat(self: Self) ![]FileAllocationTable {
@@ -310,7 +310,7 @@ const Tests = struct {
     fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
         const T = @TypeOf(a);
 
-        inline for (@typeInfo(T).Struct.fields) |field_info| {
+        inline for (@typeInfo(T).@"struct".fields) |field_info| {
             const f_name = field_info.name;
             const f_a = @field(a, f_name);
             const f_b = @field(b, f_name);
@@ -319,13 +319,13 @@ const Tests = struct {
             // @compileLog("type tag: " ++ @tagName(f_info));
 
             switch (f_info) {
-                .Pointer => {
+                .pointer => {
                     if (!std.mem.eql(u8, f_a, f_b)) {
                         tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
                         return false;
                     }
                 },
-                .Int => {
+                .int => {
                     if (f_a != f_b) {
                         tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
                         return false;

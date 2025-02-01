@@ -30,7 +30,7 @@ const AppState = @This();
 pub fn init(opts: Settings) !AppState {
     var state: AppState = undefined;
 
-    inline for (@typeInfo(AppState).Struct.fields) |f| {
+    inline for (@typeInfo(AppState).@"struct".fields) |f| {
         const f_name = f.name;
         const hidden = comptime std.mem.startsWith(u8, f_name, "_");
         if (hidden) continue;
