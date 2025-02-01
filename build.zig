@@ -198,10 +198,12 @@ fn clean_all_step(b: *std.Build) void {
 fn create_filesystems_step(b: *std.Build) *std.Build.Step {
     const create = b.step("create-filesystems", "Create filesystems for testing");
     const fs_dir_doesnt_exist = std.fs.cwd().openDir("./filesystems", .{}) == error.FileNotFound;
+
     if (fs_dir_doesnt_exist) {
         const create_fat32 = b.addSystemCommand(&[_][]const u8{ "bash", "scripts/create_test_fat32_filesystem.sh" });
         create.dependOn(&create_fat32.step);
     }
+
     return create;
 }
 
