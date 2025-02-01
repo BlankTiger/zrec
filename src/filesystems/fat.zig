@@ -6,150 +6,8 @@ const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.fat);
 
 pub const FAT32 = struct {
-    alloc: Allocator,
-    reader: *Reader,
-    buf: []u8,
-    filesystem: []u8,
-    boot_sector: BootSector,
-    bios_parameter_block: BIOSParameterBlock,
-    fat: []FileAllocationTable,
-
-    const Self = @This();
-    const SECTOR_SIZE = 512;
-    const BPB_START_OFFSET = 11;
-    const BPB_END_OFFSET = 64;
-    const SIZE_OF_BPB = BPB_END_OFFSET - BPB_START_OFFSET;
-
-    pub const Error =
-        Allocator.Error
-        || std.fs.File.ReadError
-        || error{ NotFAT32, InvalidJmpBoot, FileTooSmall };
-
-    pub fn init(alloc: Allocator, buf: []u8, reader: *Reader) Error!Self {
-        const read = try reader.read(buf);
-        // should at least have 9 sectors of 512 bytes each
-        if (read <= 9*SECTOR_SIZE) return error.FileTooSmall;
-        const mem = buf[0..read];
-
-        const bs = try parse_boot_sector(mem[0..BPB_START_OFFSET], mem[BPB_END_OFFSET..]);
-        const bpb = parse_bios_parameter_block(mem[BPB_START_OFFSET..64]);
-        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
-        const fat_size = bpb.fat_size_32;
-        const total_sectors = bpb.total_sectors_32;
-        const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
-        const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
-        if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
-
-        var self: Self = .{
-            .alloc = alloc,
-            .reader = reader,
-            .buf = buf[0..],
-            .filesystem = mem,
-            .boot_sector = bs,
-            .bios_parameter_block = bpb,
-            .fat = undefined,
-        };
-        self.fat = try self.parse_fat();
-        return self;
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.alloc.free(self.buf);
-        self.* = undefined;
-    }
-
-    pub fn calc_size(self: Self) f64 {
-        const bpb = &self.bios_parameter_block;
-        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
-        const fat_size = bpb.fat_size_32;
-        const total_sectors = bpb.total_sectors_32;
-        const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
-        const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
-        const size = bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector;
-        return @floatFromInt(size);
-    }
-
-    fn parse_fat(self: Self) ![]FileAllocationTable {
-        var fat = std.ArrayList(FileAllocationTable).init(self.alloc);
-        const bpb = &self.bios_parameter_block;
-        const s = self.find_first_sector_of_cluster(bpb.root_cluster);
-        log.debug("first sector of root cluster: {d}", .{s});
-        return try fat.toOwnedSlice();
-    }
-
-    fn find_first_sector_of_cluster(self: Self, cluster_num: usize) usize {
-        const bpb = &self.bios_parameter_block;
-        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
-        const first_data_sector = bpb.reserved_sector_count + (bpb.num_of_fats * bpb.fat_size_32) + root_dir_sectors;
-        const first_sector_of_cluster = ((cluster_num - 2) * bpb.sectors_per_cluster) + first_data_sector;
-        return first_sector_of_cluster * bpb.bytes_per_sector;
-
-    }
-
-    fn parse_boot_sector(first_part: *[11]u8, second_part: []u8) !BootSector {
-        const jmp_boot = first_part[0..3];
-        if ((jmp_boot[0] != 0xEB or jmp_boot[2] != 0x90) and jmp_boot[0] != 0xE9) return error.InvalidJmpBoot;
-
-        // TODO: add all validation
-        return BootSector {
-            .jmp_boot = jmp_boot,
-            .oem_name = first_part[3..],
-            .drive_number = second_part[0..1],
-            .reserved_1 = second_part[1..2],
-            .boot_signature = second_part[2..3],
-            .volume_serial_number = second_part[3..7],
-            .volume_label = second_part[7..18],
-            .file_system_type = second_part[18..26],
-            .reserved_2 = second_part[26..446],
-            .signature_word = second_part[446..448],
-        };
-    }
-
-    fn parse_bios_parameter_block(mem: *[SIZE_OF_BPB]u8) BIOSParameterBlock {
-        return BIOSParameterBlock {
-            .bytes_per_sector = read_u16(mem[0..2]),
-            .sectors_per_cluster = mem[2],
-            .reserved_sector_count = read_u16(mem[3..5]),
-            .num_of_fats = mem[5],
-            .root_entries_count = read_u16(mem[6..8]),
-            .total_sectors_16 = read_u16(mem[8..10]),
-            .media = mem[10],
-            .fat_size_16 = read_u16(mem[11..13]),
-            .sectors_per_track = read_u16(mem[13..15]),
-            .num_of_heads = read_u16(mem[15..17]),
-            .hidden_sectors = read_u32(mem[17..21]),
-            .total_sectors_32 = read_u32(mem[21..25]),
-            .fat_size_32 = read_u32(mem[25..29]),
-            .extra_flags = mem[29..31],
-            .filesystem_version = mem[31..33],
-            .root_cluster = read_u32(mem[33..37]),
-            .fsinfo_sector_number = read_u16(mem[37..39]),
-            .backup_boot_sector_number = read_u16(mem[39..41]),
-            .reserved = mem[41..41+12],
-        };
-    }
-
-    fn read_u16(mem: *[2]u8) u16 {
-        return std.mem.readInt(u16, mem, .little);
-    }
-
-    fn read_u32(mem: *[4]u8) u32 {
-        return std.mem.readInt(u32, mem, .little);
-    }
-
-    pub fn get_backup_boot_sector(self: Self) !BootSector {
-        const mem_part1 = self.buf[6*SECTOR_SIZE..6*SECTOR_SIZE + BPB_START_OFFSET];
-        const mem_part2 = self.buf[6*SECTOR_SIZE + BPB_END_OFFSET..];
-        return try parse_boot_sector(mem_part1, mem_part2);
-    }
-
-    pub fn get_backup_bios_parameter_block(self: Self) BIOSParameterBlock {
-        const mem = self.buf[6*SECTOR_SIZE + BPB_START_OFFSET..6*SECTOR_SIZE + BPB_START_OFFSET + SIZE_OF_BPB];
-        return parse_bios_parameter_block(mem);
-    }
-
     /// All fields are sequential on disk from byte offset 0
-    pub const BootSector = struct {
+    pub const BootSector = extern struct {
         /// Starts at offset: 0
         ///
         /// What this forms is a three-byte Intel x86
@@ -183,7 +41,7 @@ pub const FAT32 = struct {
     };
 
     /// Fields start from byte offset 11
-    pub const BIOSParameterBlock = struct {
+    pub const BIOSParameterBlock = extern struct {
         /// Count of bytes per sector. This value may take on
         /// only the following values: 512, 1024, 2048 or 4096
         bytes_per_sector: u16,
@@ -265,6 +123,63 @@ pub const FAT32 = struct {
         reserved: *[12]u8,
     };
 
+    pub const FAT32Dir = extern struct {
+        /// 'Short' file name limited to 11 character
+        name: [11]u8,
+
+        /// The upper two bits of the attribute byte are reserved
+        /// and must always be set to 0 when a file is created.
+        /// These bits are not interpreted.
+        attr: Attributes,
+
+        /// Reserved. Must be set to 0.
+        ntres: u8,
+
+        /// Component of the file creation time. Count of
+        /// tenths of a second. Valid range is:
+        /// 0 <= crt_time_tenth <= 199
+        crt_time_tenth: u8,
+
+        /// Creation time. Granularity is 2 seconds.
+        crt_time: u16,
+
+        /// Creation date.
+        crt_date: u16,
+
+        /// Last access date. Last access is defined as a
+        /// read or write operation performed on the
+        /// file/directory described by this entry.
+        lst_acc_date: u16,
+
+        /// High word of first data cluster number for
+        /// file/directory described by this entry.
+        fst_clus_hi: u16,
+
+        /// Last modification (write) time.
+        wrt_time: u16,
+
+        /// Last modification (write) date.
+        wrt_date: u16,
+
+        /// Low word of first data cluster number for
+        /// file/directory described by this entry.
+        fst_clus_lo: u16,
+
+        /// 32-bit quantity containing size in bytes of
+        /// file/directory described by this entry.
+        file_size: u32,
+
+        pub const Attributes = enum(u8) {
+            READ_ONLY = 0x01,
+            HIDDEN    = 0x02,
+            SYSTEM    = 0x04,
+            VOLUME_ID = 0x08,
+            DIRECTORY = 0x10,
+            ARCHIVE   = 0x20,
+            LONG_NAME = 0x01 | 0x02 | 0x04 | 0x08,
+        };
+    };
+
     pub const FAT32State = union(enum) {
         /// 0x0000000
         free,
@@ -293,6 +208,164 @@ pub const FAT32 = struct {
     pub const FileAllocationTable = struct {
         state: FAT32State,
     };
+
+    alloc: Allocator,
+    reader: *Reader,
+    buf: []u8,
+    filesystem: []u8,
+    boot_sector: BootSector,
+    bios_parameter_block: BIOSParameterBlock,
+    fat: []FileAllocationTable,
+
+    const Self = @This();
+    const SECTOR_SIZE = 512;
+    const BPB_START_OFFSET = 11;
+    const BPB_END_OFFSET = 64;
+    const SIZE_OF_BPB = BPB_END_OFFSET - BPB_START_OFFSET;
+
+    pub const Error =
+        Allocator.Error
+        || std.fs.File.ReadError
+        || error{ NotFAT32, InvalidJmpBoot, FileTooSmall };
+
+    pub fn init(alloc: Allocator, buf: []u8, reader: *Reader) Error!Self {
+        const read = try reader.read(buf);
+        // should at least have 9 sectors of 512 bytes each
+        if (read <= 9*SECTOR_SIZE) return error.FileTooSmall;
+        const mem = buf[0..read];
+
+        const bs = try parse_boot_sector(mem[0..BPB_START_OFFSET], mem[BPB_END_OFFSET..]);
+        const bpb = parse_bios_parameter_block(mem[BPB_START_OFFSET..64]);
+        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
+        const fat_size = bpb.fat_size_32;
+        const total_sectors = bpb.total_sectors_32;
+        const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
+        const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
+        if (root_dir_sectors != 0 or count_of_clusters < 65526) return error.NotFAT32;
+
+        var self: Self = .{
+            .alloc = alloc,
+            .reader = reader,
+            .buf = buf[0..],
+            .filesystem = mem,
+            .boot_sector = bs,
+            .bios_parameter_block = bpb,
+            .fat = undefined,
+        };
+        self.fat = try self.parse_fat();
+        return self;
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.alloc.free(self.buf);
+        self.* = undefined;
+    }
+
+    fn parse_fat(self: Self) ![]FileAllocationTable {
+        var fat = std.ArrayList(FileAllocationTable).init(self.alloc);
+        const bpb = &self.bios_parameter_block;
+        const s = self.find_first_sector_of_cluster(bpb.root_cluster);
+        log.debug("first sector of root cluster: {d}", .{s});
+        return try fat.toOwnedSlice();
+    }
+
+    fn find_first_sector_of_cluster(self: Self, cluster_num: usize) usize {
+        const bpb = &self.bios_parameter_block;
+        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
+        const first_data_sector = bpb.reserved_sector_count + (bpb.num_of_fats * bpb.fat_size_32) + root_dir_sectors;
+        const first_sector_of_cluster = ((cluster_num - 2) * bpb.sectors_per_cluster) + first_data_sector;
+        return first_sector_of_cluster * bpb.bytes_per_sector;
+
+    }
+
+    fn parse_boot_sector(first_part: *[11]u8, second_part: []u8) !BootSector {
+        const jmp_boot = first_part[0..3];
+        if ((jmp_boot[0] != 0xEB or jmp_boot[2] != 0x90) and jmp_boot[0] != 0xE9) return error.InvalidJmpBoot;
+
+        // TODO: add all validation
+        return BootSector {
+            .jmp_boot = jmp_boot,
+            .oem_name = first_part[3..],
+            .drive_number = second_part[0..1],
+            .reserved_1 = second_part[1..2],
+            .boot_signature = second_part[2..3],
+            .volume_serial_number = second_part[3..7],
+            .volume_label = second_part[7..18],
+            .file_system_type = second_part[18..26],
+            .reserved_2 = second_part[26..446],
+            .signature_word = second_part[446..448],
+        };
+    }
+
+    fn parse_bios_parameter_block(mem: *[SIZE_OF_BPB]u8) BIOSParameterBlock {
+        return BIOSParameterBlock {
+            .bytes_per_sector = read_u16(mem[0..2]),
+            .sectors_per_cluster = mem[2],
+            .reserved_sector_count = read_u16(mem[3..5]),
+            .num_of_fats = mem[5],
+            .root_entries_count = read_u16(mem[6..8]),
+            .total_sectors_16 = read_u16(mem[8..10]),
+            .media = mem[10],
+            .fat_size_16 = read_u16(mem[11..13]),
+            .sectors_per_track = read_u16(mem[13..15]),
+            .num_of_heads = read_u16(mem[15..17]),
+            .hidden_sectors = read_u32(mem[17..21]),
+            .total_sectors_32 = read_u32(mem[21..25]),
+            .fat_size_32 = read_u32(mem[25..29]),
+            .extra_flags = mem[29..31],
+            .filesystem_version = mem[31..33],
+            .root_cluster = read_u32(mem[33..37]),
+            .fsinfo_sector_number = read_u16(mem[37..39]),
+            .backup_boot_sector_number = read_u16(mem[39..41]),
+            .reserved = mem[41..41+12],
+        };
+    }
+
+    fn read_u16(mem: *[2]u8) u16 {
+        return std.mem.readInt(u16, mem, .little);
+    }
+
+    fn read_u32(mem: *[4]u8) u32 {
+        return std.mem.readInt(u32, mem, .little);
+    }
+
+    pub fn get_backup_boot_sector(self: Self) !BootSector {
+        const mem_part1 = self.buf[6*SECTOR_SIZE..6*SECTOR_SIZE + BPB_START_OFFSET];
+        const mem_part2 = self.buf[6*SECTOR_SIZE + BPB_END_OFFSET..];
+        return try parse_boot_sector(mem_part1, mem_part2);
+    }
+
+    pub fn get_backup_bios_parameter_block(self: Self) BIOSParameterBlock {
+        const mem = self.buf[6*SECTOR_SIZE + BPB_START_OFFSET..6*SECTOR_SIZE + BPB_START_OFFSET + SIZE_OF_BPB];
+        return parse_bios_parameter_block(mem);
+    }
+
+    pub fn calc_size(self: Self) f64 {
+        const bpb = &self.bios_parameter_block;
+        const root_dir_sectors = ((bpb.root_entries_count * 32) + (bpb.bytes_per_sector - 1)) / bpb.bytes_per_sector;
+        const fat_size = bpb.fat_size_32;
+        const total_sectors = bpb.total_sectors_32;
+        const data_sectors = total_sectors - (bpb.reserved_sector_count + (bpb.num_of_fats * fat_size) + root_dir_sectors);
+        const count_of_clusters = data_sectors / bpb.sectors_per_cluster;
+        const size = bpb.sectors_per_cluster * count_of_clusters * bpb.bytes_per_sector;
+        return @floatFromInt(size);
+    }
+
+    // TODO:
+    // pub fn calc_free(self: Self) f64 {}
+
+    /// caller has to call destroy on the resulting pointer
+    pub fn get_root_dir(self: Self) !*FAT32Dir {
+        const bpb = &self.bios_parameter_block;
+        try self.reader.seek_to(bpb.root_cluster);
+        const dir = try self.alloc.create(FAT32Dir);
+        errdefer self.alloc.destroy(dir);
+        const buf: []u8 = @as([*]u8, @ptrCast(dir))[0..@sizeOf(FAT32Dir)];
+        const read = try self.reader.read(buf);
+        assert(read == @sizeOf(FAT32Dir));
+        log.debug("{s}", .{dir.name});
+        return dir;
+    }
 };
 
 test {
@@ -357,6 +430,10 @@ const Tests = struct {
         var fs = try fs_handler.determine_filesystem();
         defer fs.deinit();
 
+        const root_dir = try fs.fat32.get_root_dir();
+        defer fs_handler.alloc.destroy(root_dir);
         tlog.debug("{d}", .{fs.fat32.calc_size()});
+        tlog.debug("{any}", .{root_dir});
+        tlog.debug("{s}", .{root_dir.name});
     }
 };

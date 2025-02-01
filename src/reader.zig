@@ -126,6 +126,10 @@ pub const MmapReader = struct {
         if (_idx + offset > self.mem.len) self.idx = self.mem.len;
         self.idx = @intCast(_idx + offset);
     }
+
+    pub fn seek_to(self: *Self, idx: usize) !void {
+        self.idx = idx;
+    }
 };
 
 test {
