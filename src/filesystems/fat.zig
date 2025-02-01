@@ -338,23 +338,25 @@ const Tests = struct {
     }
 
     test "fresh fat32 is read as expected with all backup info in sector 6" {
-        testing.log_level = .debug;
-        var fs_handler = try FilesystemHandler.init(t_alloc, FAT32_PATH);
+        var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
         var fs = try fs_handler.determine_filesystem();
         defer fs_handler.deinit();
         defer fs.deinit();
 
-        switch (fs) {
-            .fat32 => |fat32| {
-                const bkp_bs = try fat32.get_backup_boot_sector();
-                const bkp_bpb = fat32.get_backup_bios_parameter_block();
-                try expect(custom_slice_and_int_eql(fat32.boot_sector, bkp_bs));
-                try expect(custom_slice_and_int_eql(fat32.bios_parameter_block, bkp_bpb));
-            },
-            else => unreachable
-        }
+        const fat32 = &fs.fat32;
+        const bkp_bs = try fat32.get_backup_boot_sector();
+        const bkp_bpb = fat32.get_backup_bios_parameter_block();
+        try expect(custom_slice_and_int_eql(fat32.boot_sector, bkp_bs));
+        try expect(custom_slice_and_int_eql(fat32.bios_parameter_block, bkp_bpb));
     }
 
     test "read root cluster" {
+        testing.log_level = .debug;
+        var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
+        defer fs_handler.deinit();
+        var fs = try fs_handler.determine_filesystem();
+        defer fs.deinit();
+
+        tlog.debug("{d}", .{fs.fat32.calc_size()});
     }
 };

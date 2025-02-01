@@ -1,6 +1,95 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const Timer = std.time.Timer;
+const lib = @import("zrec");
+const ReadReader = lib.ReadReader;
+const MmapReader = lib.MmapReader;
+
+const path = "filesystems/fat32_filesystem.img";
+pub var buf_size: usize = 512;
+
+pub fn run_read_reader(core_count: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const threads = try alloc.alloc(std.Thread, core_count);
+    for (0..core_count) |idx| {
+        threads[idx] = try std.Thread.spawn(.{}, inner_read_reader, .{});
+    }
+    for (threads) |t| t.join();
+}
+
+fn inner_read_reader() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const read_call_buf: []u8 = try alloc.alloc(u8, buf_size);
+    const f_read = try std.fs.cwd().openFile(path, .{});
+    var reader_read = try ReadReader.init(&f_read);
+    defer reader_read.deinit();
+    var bytes_read_read = try reader_read.read(read_call_buf);
+    while (bytes_read_read > 0) {
+        bytes_read_read = try reader_read.read(read_call_buf);
+    }
+}
+
+pub fn run_mmap_reader(core_count: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const threads = try alloc.alloc(std.Thread, core_count);
+    for (0..core_count) |idx| {
+        threads[idx] = try std.Thread.spawn(.{}, inner_mmap_reader, .{});
+    }
+    for (threads) |t| t.join();
+}
+
+fn inner_mmap_reader() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const mmap_cal_buf: []u8 = try alloc.alloc(u8, buf_size);
+    const f_mmap = try std.fs.cwd().openFile(path, .{});
+    var reader_mmap = try MmapReader.init(&f_mmap);
+    defer reader_mmap.deinit();
+    var bytes_read_mmap = try reader_mmap.read(mmap_cal_buf);
+    while (bytes_read_mmap > 0) {
+        bytes_read_mmap = try reader_mmap.read(mmap_cal_buf);
+    }
+}
+
+pub fn run_mmap_reader_shared(core_count: usize) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const f_mmap = try std.fs.cwd().openFile(path, .{});
+    var reader_mmap = try MmapReader.init(&f_mmap);
+    defer reader_mmap.deinit();
+
+    const threads = try alloc.alloc(std.Thread, core_count);
+    for (0..core_count) |idx| {
+        threads[idx] = try std.Thread.spawn(.{}, inner_mmap_reader_shared, .{reader_mmap.mem});
+    }
+    for (threads) |t| t.join();
+}
+
+fn inner_mmap_reader_shared(mem: MmapReader.MemT) !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const mmap_cal_buf: []u8 = try alloc.alloc(u8, buf_size);
+    var reader_mmap = MmapReader.init_with_mem(mem);
+    var bytes_read_mmap = try reader_mmap.read(mmap_cal_buf);
+    while (bytes_read_mmap > 0) {
+        bytes_read_mmap = try reader_mmap.read(mmap_cal_buf);
+    }
+}
 
 pub fn TimeResult(count: usize, RetType: ?type) type {
     const incl_ret_type = RetType != null;
