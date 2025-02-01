@@ -52,10 +52,9 @@ pub const PNGRecoverer = struct {
         return std.mem.eql(u8, bytes, &START);
     }
 
-    /// in reality END is 'IEND' + 4 bytes of len
-    /// TODO: extract that into an END_len var and use that instead
-    /// of fiddling with the +-4
     pub const END = "IEND";
+    /// in reality END is 'IEND' + 4 bytes of len
+    pub const END_len = END.len + 4;
     fn is_png_end(bytes: []const u8) bool {
         return std.mem.eql(u8, bytes, END);
     }
@@ -85,9 +84,9 @@ pub const PNGRecoverer = struct {
                 bytes_left = read_bytes - idx;
                 // ensure that the next read won't possibly miss
                 // a png start or png end
-                if (png_started and bytes_left < END.len + 4 and read_bytes < self.stride and is_png_end(buf[idx..idx + END.len])) {
+                if (png_started and bytes_left < END_len and read_bytes < self.stride and is_png_end(buf[idx..idx + END.len])) {
                     png_ends_found += 1;
-                    idx += END.len + 4;
+                    idx += END_len;
                     idx_png_end = idx;
                     break;
                 } else if (bytes_left < START.len and read_bytes > START.len) {
@@ -107,7 +106,7 @@ pub const PNGRecoverer = struct {
                 } else if (png_started and is_png_end(buf[idx..idx + END.len])) {
                     png_ends_found += 1;
                     if (self.debug) log.debug("embedded_png_count: {d}, ends_found: {d}", .{embedded_png_count, png_ends_found});
-                    idx += END.len + 4;
+                    idx += END_len;
                     if (embedded_png_count < png_ends_found) {
                         idx_png_end = idx;
                         try self.reader.seek_by(-@as(i64, @intCast(read_bytes - idx_png_end)));
@@ -226,7 +225,7 @@ const Tests = struct {
         defer png.deinit();
 
         try expect(std.mem.eql(u8, png.data[0..START.len], &START), "start is incorrect");
-        try expect(std.mem.eql(u8, png.data[png.data.len-PNGRecoverer.END.len-4..png.data.len-4], PNGRecoverer.END), "end is incorrect");
+        try expect(std.mem.eql(u8, png.data[png.data.len-PNGRecoverer.END_len..png.data.len-4], PNGRecoverer.END), "end is incorrect (offset by 4, cause every tag is 8)");
     }
 
     test "recover png from fat32, verify using sha1" {
