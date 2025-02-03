@@ -265,7 +265,8 @@ pub const FAT32 = struct {
         var fat = std.ArrayList(FileAllocationTable).init(self.alloc);
         const bpb = &self.bios_parameter_block;
         const s = self.find_first_sector_of_cluster(bpb.root_cluster);
-        log.debug("first sector of root cluster: {d}", .{s});
+        _ = s;
+        // log.debug("first sector of root cluster: {d}", .{s});
         return try fat.toOwnedSlice();
     }
 
@@ -360,10 +361,10 @@ pub const FAT32 = struct {
         try self.reader.seek_to(bpb.root_cluster);
         const dir = try self.alloc.create(FAT32Dir);
         errdefer self.alloc.destroy(dir);
-        const buf: []u8 = @as([*]u8, @ptrCast(dir))[0..@sizeOf(FAT32Dir)];
+        const size = @sizeOf(FAT32Dir);
+        const buf: []u8 = @as([*]u8, @ptrCast(dir))[0..size];
         const read = try self.reader.read(buf);
-        assert(read == @sizeOf(FAT32Dir));
-        log.debug("{s}", .{dir.name});
+        if (read != size) return error.DidntReadEnoughBytesForRootDir;
         return dir;
     }
 };
@@ -432,8 +433,14 @@ const Tests = struct {
 
         const root_dir = try fs.fat32.get_root_dir();
         defer fs_handler.alloc.destroy(root_dir);
-        tlog.debug("{d}", .{fs.fat32.calc_size()});
-        tlog.debug("{any}", .{root_dir});
-        tlog.debug("{s}", .{root_dir.name});
+
+        try expect(std.mem.containsAtLeast(u8, &root_dir.name, 1, "mkfs.fat"));
+        // NOTE: documentation says this should always be 0, for some reason its 32
+        try expect(root_dir.ntres == 32);
+        try expect(root_dir.file_size == 1069875200);
+        try expect(root_dir.fst_clus_hi == 0);
+        try expect(root_dir.fst_clus_hi == 0);
+        try expect(root_dir.fst_clus_lo == 0);
+        try expect(root_dir.attr == .VOLUME_ID);
     }
 };
