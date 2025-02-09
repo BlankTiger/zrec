@@ -4,6 +4,7 @@ const lib = @import("lib.zig");
 const Reader = lib.Reader;
 const FAT32 = @import("filesystems/fat.zig").FAT32;
 const NTFS = @import("filesystems/ntfs.zig").NTFS;
+const EXT2 = @import("filesystems/ext2.zig").EXT2;
 const log = std.log.scoped(.filesystems);
 
 pub const FilesystemHandler = struct {
@@ -18,6 +19,7 @@ pub const FilesystemHandler = struct {
 
     const Error =
         FAT32.Error
+        || EXT2.Error
         || NTFS.Error
         || Allocator.Error
         || std.fs.File.ReadError
@@ -58,9 +60,9 @@ pub const FilesystemHandler = struct {
     pub const Filesystem = union(enum) {
         fat32: FAT32,
         ntfs: NTFS,
+        ext2: EXT2,
         // ext4: EXT4,
         // ext3: EXT3,
-        // ext2: EXT2,
 
         pub fn deinit(self: *Filesystem) void {
             switch (self.*) {
@@ -89,6 +91,10 @@ pub const FilesystemHandler = struct {
         }
         if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |err| {
             log.warn("couldnt init NTFS, err: {any}", .{err});
+            try self.errors.append(err);
+        }
+        if (EXT2.init(self.alloc, try self.create_new_reader())) |ext2| return .{ .ext2 = ext2 } else |err| {
+            log.warn("couldnt init EXT2, err: {any}", .{err});
             try self.errors.append(err);
         }
 
@@ -146,11 +152,15 @@ const Tests = struct {
         var fs_handler = try FilesystemHandler.init(t_alloc, path);
         defer fs_handler.deinit();
         try t.expectError(error.NoFilesystemMatch, fs_handler.determine_filesystem());
-        try t.expectEqual(2, fs_handler.errors.items.len);
+        try t.expectEqual(3, fs_handler.errors.items.len);
         try t.expectEqualSlices(
             FilesystemHandler.Error,
             fs_handler.errors.items,
-            &[_]FilesystemHandler.Error{ error.FileTooSmall, error.UnimplementedCurrently }
+            &[_]FilesystemHandler.Error{
+                error.FileTooSmall,
+                error.UnimplementedCurrently,
+                error.UnimplementedCurrently
+            }
         );
     }
 };
