@@ -161,12 +161,13 @@ test print {
         \\
     ;
 
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
+    const t = std.testing;
+    var buf = std.ArrayList(u8).init(t.allocator);
     defer buf.deinit();
     const writer = buf.writer();
     var opts: Opts = .{
         .tabs = "  ",
     };
     print_with_writer(writer, a, &opts);
-    try std.testing.expectEqualStrings(expected, buf.items);
+    try t.expectEqualStrings(expected, buf.items);
 }

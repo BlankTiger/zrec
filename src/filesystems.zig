@@ -116,8 +116,8 @@ test {
 }
 
 const Tests = struct {
-    const testing = std.testing;
-    const t_alloc = testing.allocator;
+    const t = std.testing;
+    const t_alloc = t.allocator;
     const assert = std.debug.assert;
     const FAT32_PATH = "./filesystems/fat32_filesystem.img";
     const tlog = std.log.scoped(.filesystems_tests);
@@ -125,12 +125,12 @@ const Tests = struct {
     test "create new reader cleans up everything when somethings goes wrong (file access err)" {
         var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
         defer fs_handler.deinit();
-        try testing.expectError(error.FileNotFound, fs_handler.create_new_reader());
+        try t.expectError(error.FileNotFound, fs_handler.create_new_reader());
         try fs_handler.update_path(FAT32_PATH);
     }
 
     test "hold all errors found during determine_filesystem" {
-        var _dir = testing.tmpDir(.{});
+        var _dir = t.tmpDir(.{});
         defer _dir.cleanup();
         const dir = _dir.dir;
         const filename = "tmp_not_filesystem";
@@ -145,9 +145,9 @@ const Tests = struct {
 
         var fs_handler = try FilesystemHandler.init(t_alloc, path);
         defer fs_handler.deinit();
-        try testing.expectError(error.NoFilesystemMatch, fs_handler.determine_filesystem());
-        try testing.expectEqual(2, fs_handler.errors.items.len);
-        try testing.expectEqualSlices(
+        try t.expectError(error.NoFilesystemMatch, fs_handler.determine_filesystem());
+        try t.expectEqual(2, fs_handler.errors.items.len);
+        try t.expectEqualSlices(
             FilesystemHandler.Error,
             fs_handler.errors.items,
             &[_]FilesystemHandler.Error{ error.FileTooSmall, error.UnimplementedCurrently }

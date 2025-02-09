@@ -375,54 +375,13 @@ test {
 
 const Tests = struct {
     const FilesystemHandler = lib.FilesystemHandler;
-    const testing = std.testing;
-    const t_alloc = testing.allocator;
+    const t = std.testing;
+    const t_alloc = t.allocator;
     const FAT32_PATH = "./filesystems/fat32_filesystem.img";
-    const expect = testing.expect;
     const tlog = std.log.scoped(.fat_tests);
 
-    fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
-        const T = @TypeOf(a);
-
-        inline for (@typeInfo(T).@"struct".fields) |field_info| {
-            const f_name = field_info.name;
-            const f_a = @field(a, f_name);
-            const f_b = @field(b, f_name);
-            const f_info = @typeInfo(@TypeOf(f_a));
-            // std.debug.print("type tag: {s}\n", .{@tagName(f_info)});
-            // @compileLog("type tag: " ++ @tagName(f_info));
-
-            switch (f_info) {
-                .pointer => {
-                    if (!std.mem.eql(u8, f_a, f_b)) {
-                        tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
-                        return false;
-                    }
-                },
-                .int => {
-                    if (f_a != f_b) {
-                        tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
-                        return false;
-                    }
-                },
-                .array => |info| {
-                    const child = info.child;
-                    if (!std.mem.eql(child, &f_a, &f_b)) {
-                        tlog.debug("a: {any} and b: {any} dont match on {s}", .{f_a, f_b, f_name});
-                        return false;
-                    }
-                },
-                else => {
-                    tlog.debug("unexpected type: {any}: {any}", .{@TypeOf(f_a), f_a});
-                    unreachable;
-                }
-            }
-        }
-        return true;
-    }
-
     test "fresh fat32 is read as expected with all backup info in sector 6" {
-        testing.log_level = .debug;
+        t.log_level = .debug;
         var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
         var fs = try fs_handler.determine_filesystem();
         defer fs_handler.deinit();
@@ -433,12 +392,12 @@ const Tests = struct {
         defer t_alloc.destroy(bkp_bs);
         const bs1_mem: []u8 = @as([*]u8, @ptrCast(fat32.boot_sector))[0..@sizeOf(FAT32.BootSector)];
         const bs2_mem: []u8 = @as([*]u8, @ptrCast(bkp_bs))[0..@sizeOf(FAT32.BootSector)];
-        try expect(std.mem.eql(u8, bs1_mem, bs2_mem));
-        try expect(custom_slice_and_int_eql(fat32.boot_sector.*, bkp_bs.*));
+        try t.expectEqualSlices(u8, bs1_mem, bs2_mem);
+        try t.expectEqualDeep(fat32.boot_sector.*, bkp_bs.*);
     }
 
     test "read root cluster" {
-        testing.log_level = .debug;
+        t.log_level = .debug;
         var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
         defer fs_handler.deinit();
         var fs = try fs_handler.determine_filesystem();
@@ -447,13 +406,13 @@ const Tests = struct {
         const root_dir = try fs.fat32.get_root_dir();
         defer fs_handler.alloc.destroy(root_dir);
 
-        try expect(std.mem.containsAtLeast(u8, &root_dir.name, 1, "mkfs.fat"));
+        try t.expect(std.mem.containsAtLeast(u8, &root_dir.name, 1, "mkfs.fat"));
         // NOTE: documentation says this should always be 0, for some reason its 32
-        try expect(root_dir.ntres == 32);
-        try expect(root_dir.file_size == 1069875200);
-        try expect(root_dir.fst_clus_hi == 0);
-        try expect(root_dir.fst_clus_hi == 0);
-        try expect(root_dir.fst_clus_lo == 0);
-        try expect(root_dir.attr == .VOLUME_ID);
+        try t.expectEqual(32, root_dir.ntres);
+        try t.expectEqual(1069875200, root_dir.file_size);
+        try t.expectEqual(0, root_dir.fst_clus_hi);
+        try t.expectEqual(0, root_dir.fst_clus_hi);
+        try t.expectEqual(0, root_dir.fst_clus_lo);
+        try t.expectEqual(.VOLUME_ID, root_dir.attr);
     }
 };

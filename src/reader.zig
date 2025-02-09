@@ -137,7 +137,7 @@ test {
 }
 
 const Tests = struct {
-    const expect = std.testing.expect;
+    const t = std.testing;
 
     test "MmapReader read full fat32 image, result should be equivalent to reading via read system calls, seeking works too" {
         const path = "filesystems/fat32_filesystem.img";
@@ -152,13 +152,13 @@ const Tests = struct {
 
         var bytes_read_read = try reader_read.read(&read_call_buf);
         var bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
-        try expect(bytes_read_read == bytes_read_mmap);
-        try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+        try t.expectEqual(bytes_read_read, bytes_read_mmap);
+        try t.expectEqualSlices(u8, &read_call_buf, &mmap_call_buf);
         while (bytes_read_read > 0) {
             bytes_read_read = try reader_read.read(&read_call_buf);
             bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
-            try expect(bytes_read_read == bytes_read_mmap);
-            try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+            try t.expectEqual(bytes_read_read, bytes_read_mmap);
+            try t.expectEqualSlices(u8, &read_call_buf, &mmap_call_buf);
         }
 
         try reader_read.seek_by(-1000);
@@ -166,8 +166,8 @@ const Tests = struct {
         while (bytes_read_read > 0) {
             bytes_read_read = try reader_read.read(&read_call_buf);
             bytes_read_mmap = try reader_mmap.read(&mmap_call_buf);
-            try expect(bytes_read_read == bytes_read_mmap);
-            try expect(std.mem.eql(u8, &read_call_buf, &mmap_call_buf));
+            try t.expectEqual(bytes_read_read, bytes_read_mmap);
+            try t.expectEqualSlices(u8, &read_call_buf, &mmap_call_buf);
         }
     }
 
@@ -192,13 +192,13 @@ const Tests = struct {
             try r.seek_by(-@as(i64, @intCast(read_bytes1)));
             const read_bytes2 = try r.read(&buf2);
 
-            try expect(wrote_bytes == read_bytes1);
-            try expect(wrote_bytes == read_bytes2);
+            try t.expectEqual(wrote_bytes, read_bytes1);
+            try t.expectEqual(wrote_bytes, read_bytes2);
         }
 
-        try expect(std.mem.eql(u8, &buf1, &buf2));
-        try expect(std.mem.eql(u8, msg, &buf1));
-        try expect(std.mem.eql(u8, msg, &buf2));
+        try t.expectEqualStrings(&buf1, &buf2);
+        try t.expectEqualStrings(msg, &buf1);
+        try t.expectEqualStrings(msg, &buf2);
     }
 
     test "make sure it works when std.io.BufferedReader's buf is filled and we go back" {
@@ -229,17 +229,17 @@ const Tests = struct {
             try r.seek_by(-3);
             const read_bytes4 = try r.read(&buf4);
 
-            try expect(wrote_bytes == read_bytes1);
-            try expect(wrote_bytes == read_bytes2);
-            try expect(wrote_bytes/2 == read_bytes3);
-            try expect(read_bytes4 == 3);
+            try t.expectEqual(wrote_bytes, read_bytes1);
+            try t.expectEqual(wrote_bytes, read_bytes2);
+            try t.expectEqual(wrote_bytes/2, read_bytes3);
+            try t.expectEqual(read_bytes4, 3);
         }
 
-        try expect(std.mem.eql(u8, &buf1, &buf2));
-        try expect(std.mem.eql(u8, msg, &buf1));
-        try expect(std.mem.eql(u8, msg, &buf2));
-        try expect(std.mem.eql(u8, msg[msg.len/2..], &buf3));
-        try expect(std.mem.eql(u8, msg[msg.len-3..], &buf4));
+        try t.expectEqualStrings(&buf1, &buf2);
+        try t.expectEqualStrings(msg, &buf1);
+        try t.expectEqualStrings(msg, &buf2);
+        try t.expectEqualStrings(msg[msg.len/2..], &buf3);
+        try t.expectEqualStrings(msg[msg.len-3..], &buf4);
     }
 
     test "seeking correctly goes back when used repeatedly" {
@@ -264,14 +264,14 @@ const Tests = struct {
             const read_bytes = try r.read(&buf_all);
             try r.seek_by(-@as(i64, @intCast(read_bytes/2)));
 
-            try expect(wrote_bytes == read_bytes);
-            try expect(std.mem.eql(u8, msg, &buf_all));
+            try t.expectEqual(wrote_bytes, read_bytes);
+            try t.expectEqualStrings(msg, &buf_all);
 
             for (0..10000) |idx| {
                 const read = try r.read(&buf);
-                try expect(read == 5);
+                try t.expectEqual(5, read);
                 log.debug("try count: {d}", .{idx});
-                try expect(std.mem.eql(u8, &buf, correct_bytes));
+                try t.expectEqualStrings(&buf, correct_bytes);
                 try r.seek_by(-5);
             }
         }

@@ -146,8 +146,8 @@ test {
 }
 
 const Tests = struct {
-    const testing = std.testing;
-    const t_alloc = testing.allocator;
+    const t = std.testing;
+    const t_alloc = t.allocator;
     const FsHandler = @import("../filesystems.zig").FilesystemHandler;
     const utils = @import("testing_utils.zig");
     const testing_fs_handler = utils.testing_fs_handler;
@@ -155,8 +155,6 @@ const Tests = struct {
     const Hashes = utils.Hashes;
     const cleanup_hashes = utils.cleanup_hashes;
     const testing_original_data = utils.testing_original_data;
-    const dbg_eql = utils.dbg_eql;
-    const expect = utils.expect;
     const END = PNGRecoverer.END;
     const START = PNGRecoverer.START;
     const tlog = std.log.scoped(.png_tests);
@@ -211,7 +209,7 @@ const Tests = struct {
                 defer png.deinit();
 
                 tlog.debug("a end: {s}, b end: {s}", .{orig_mem_data[orig_mem_data.len-END.len..], png.data[png.data.len-END.len..]});
-                try dbg_eql(orig_mem_data, png.data, p);
+                try t.expectEqualSlices(u8, orig_mem_data, png.data);
             }
         }
     }
@@ -224,12 +222,11 @@ const Tests = struct {
         const png = (try png_r.find_next()).?;
         defer png.deinit();
 
-        try expect(std.mem.eql(u8, png.data[0..START.len], &START), "start is incorrect");
-        try expect(std.mem.eql(u8, png.data[png.data.len-PNGRecoverer.END_len..png.data.len-4], PNGRecoverer.END), "end is incorrect (offset by 4, cause every tag is 8)");
+        try t.expectEqualSlices(u8, png.data[0..START.len], &START);
+        try t.expectEqualSlices(u8, png.data[png.data.len-PNGRecoverer.END_len..png.data.len-4], PNGRecoverer.END);
     }
 
     test "recover png from fat32, verify using sha1" {
-        // testing.log_level = .debug;
         var hashes = try TestExample.hashes();
         defer cleanup_hashes(&hashes);
         var fs_handler = try testing_fs_handler();
@@ -243,13 +240,14 @@ const Tests = struct {
         for (output_paths) |op| {
             const png = (try png_r.find_next()).?;
             defer png.deinit();
-            if (testing.log_level == .debug) try png.write_to_file(op);
+            if (t.log_level == .debug) try png.write_to_file(op);
             const h = try hash(png.data);
             defer t_alloc.free(h);
 
-            const err_msg = try std.fmt.allocPrint(t_alloc, "file {s} has incorrect hash: {x}", .{op, h});
-            defer t_alloc.free(err_msg);
-            try expect(hashes.contains(h), err_msg);
+            t.expect(hashes.contains(h)) catch |err| {
+                tlog.err("file {s} has incorrect hash: {x}", .{op, h});
+                return err;
+            };
         }
     }
 };

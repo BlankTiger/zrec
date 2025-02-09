@@ -141,9 +141,8 @@ test {
 }
 
 const Tests = struct {
-    const expect = std.testing.expect;
-    const testing = std.testing;
-    const t_alloc = testing.allocator;
+    const t = std.testing;
+    const t_alloc = t.allocator;
     const FsHandler = @import("../filesystems.zig").FilesystemHandler;
     const utils = @import("testing_utils.zig");
     const testing_fs_handler = utils.testing_fs_handler;
@@ -151,7 +150,6 @@ const Tests = struct {
     const hash = utils.hash;
     const Hashes = utils.Hashes;
     const cleanup_hashes = utils.cleanup_hashes;
-    const dbg_eql = utils.dbg_eql;
     const tlog = std.log.scoped(.jpg_tests);
 
     const TestExample = enum {
@@ -203,7 +201,7 @@ const Tests = struct {
                 tlog.debug("recovered_data_len: {d}", .{jpg.data.len});
                 defer jpg.deinit();
 
-                try dbg_eql(orig_mem_data, jpg.data, p);
+                try t.expectEqualSlices(u8, orig_mem_data, jpg.data);
             }
         }
     }
@@ -215,8 +213,8 @@ const Tests = struct {
         var jpg_r = JPGRecoverer.init(t_alloc, reader);
         const jpg = (try jpg_r.find_next()).?;
         defer jpg.deinit();
-        try expect(std.mem.eql(u8, jpg.data[0..3], &[3]u8{ 0xff, 0xd8, 0xff }));
-        try expect(std.mem.eql(u8, jpg.data[jpg.data.len-2..], &[2]u8{ 0xff, 0xd9 }));
+        try t.expectEqualSlices(u8, jpg.data[0..3], &[3]u8{ 0xff, 0xd8, 0xff });
+        try t.expectEqualSlices(u8, jpg.data[jpg.data.len-2..], &[2]u8{ 0xff, 0xd9 });
     }
 
     test "recover jpg from fat32, verify using sha1" {
@@ -233,11 +231,11 @@ const Tests = struct {
         for (output_paths) |op| {
             const jpg = (try jpg_r.find_next()).?;
             defer jpg.deinit();
-            if (testing.log_level == .debug) try jpg.write_to_file(op);
+            if (t.log_level == .debug) try jpg.write_to_file(op);
             const h = try hash(jpg.data);
             defer t_alloc.free(h);
 
-            try expect(hashes.contains(h));
+            try t.expect(hashes.contains(h));
         }
     }
 };
