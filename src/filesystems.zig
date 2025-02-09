@@ -85,17 +85,13 @@ pub const FilesystemHandler = struct {
 
     /// Caller must call deinit on the resulting Filesystem
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
-        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |err| {
-            log.warn("couldnt init FAT32, err: {any}", .{err});
-            try self.errors.append(err);
-        }
-        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |err| {
-            log.warn("couldnt init NTFS, err: {any}", .{err});
-            try self.errors.append(err);
-        }
-        if (EXT2.init(self.alloc, try self.create_new_reader())) |ext2| return .{ .ext2 = ext2 } else |err| {
-            log.warn("couldnt init EXT2, err: {any}", .{err});
-            try self.errors.append(err);
+        inline for (std.meta.fields(Filesystem)) |field| {
+            if (field.type.init(self.alloc, try self.create_new_reader())) |fs| {
+                return @unionInit(Filesystem, field.name, fs);
+            } else |err| {
+                log.warn("couldnt init {any}, err: {any}", .{field.type, err});
+                try self.errors.append(err);
+            }
         }
 
         return Error.NoFilesystemMatch;
