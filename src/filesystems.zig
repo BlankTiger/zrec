@@ -78,12 +78,9 @@ pub const FilesystemHandler = struct {
 
     /// Caller must call deinit on the resulting Filesystem
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
-        const buf = try self.alloc.alloc(u8, 10000);
+        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
+        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
 
-        if (FAT32.init(self.alloc, buf, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
-        if (NTFS.init(self.alloc, buf, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
-
-        self.alloc.free(buf);
         return Error.NoFilesystemMatch;
     }
 
@@ -107,40 +104,9 @@ const assert = std.debug.assert;
 const FAT32_PATH = "./filesystems/fat32_filesystem.img";
 const log = std.log;
 
-fn custom_slice_and_int_eql(a: anytype, b: @TypeOf(a)) bool {
-    const T = @TypeOf(a);
-
-    inline for (@typeInfo(T).Struct.fields) |field_info| {
-        const f_name = field_info.name;
-        const f_a = @field(a, f_name);
-        const f_b = @field(b, f_name);
-        const f_info = @typeInfo(@TypeOf(f_a));
-        // std.debug.print("type tag: {s}\n", .{@tagName(f_info)});
-        // @compileLog("type tag: " ++ @tagName(f_info));
-
-        switch (f_info) {
-            .Pointer => {
-                if (!std.mem.eql(u8, f_a, f_b)) {
-                    std.debug.print("a: {any} and b: {any} dont match on {s}\n", .{f_a, f_b, f_name});
-                    return false;
-                }
-            },
-            .Int => {
-                if (f_a != f_b) {
-                    std.debug.print("a: {any} and b: {any} dont match on {s}\n", .{f_a, f_b, f_name});
-                    return false;
-                }
-            },
-            else => unreachable
-        }
-    }
-    return true;
-}
-
 test "create new reader cleans up everything when somethings goes wrong (file access err)" {
     var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
     defer fs_handler.deinit();
     try testing.expectError(error.FileNotFound, fs_handler.create_new_reader());
     try fs_handler.update_path(FAT32_PATH);
-
 }

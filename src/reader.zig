@@ -91,7 +91,7 @@ pub const MmapReader = struct {
             .windows => try win.mmap(),
             else => unreachable,
         };
-        return Self { .mem = mem };
+        return .{ .mem = mem };
     }
 
     pub fn init_with_mem(mem: MemT) Self {

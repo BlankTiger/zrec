@@ -16,9 +16,8 @@ pub const NTFS = struct {
         || std.fs.File.ReadError
         || error{ NotNTFS, InvalidJmpBoot, UnimplementedCurrently };
 
-    pub fn init(alloc: Allocator, buf: []u8, reader: *Reader) Error!Self {
+    pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
         _ = alloc;
-        _ = buf;
         _ = reader;
 
         return error.UnimplementedCurrently;
