@@ -4,10 +4,13 @@ const lib = @import("lib.zig");
 const Reader = lib.Reader;
 const FAT32 = @import("filesystems/fat.zig").FAT32;
 const NTFS = @import("filesystems/ntfs.zig").NTFS;
+const log = std.log.scoped(.filesystems);
 
 pub const FilesystemHandler = struct {
     alloc: Allocator,
     path: []const u8,
+    /// can be used to lookup what errors happened during a call to `determine_filesystem`
+    errors: std.ArrayList(Error),
     _files: std.ArrayList(*std.fs.File),
     _readers: std.ArrayList(*Reader),
 
@@ -26,6 +29,7 @@ pub const FilesystemHandler = struct {
         return .{
             .alloc = alloc,
             .path = try alloc.dupe(u8, filepath),
+            .errors = std.ArrayList(Error).init(alloc),
             ._files = std.ArrayList(*std.fs.File).init(alloc),
             ._readers = std.ArrayList(*Reader).init(alloc),
         };
@@ -33,6 +37,7 @@ pub const FilesystemHandler = struct {
 
     pub fn deinit(self: *Self) void {
         self.alloc.free(self.path);
+        self.errors.deinit();
         for (self._readers.items) |r| {
             r.deinit();
             self.alloc.destroy(r);
@@ -78,12 +83,20 @@ pub const FilesystemHandler = struct {
 
     /// Caller must call deinit on the resulting Filesystem
     pub fn determine_filesystem(self: *Self) Error!Filesystem {
-        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |_| {}
-        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |_| {}
+        if (FAT32.init(self.alloc, try self.create_new_reader())) |fat32| return .{ .fat32 = fat32 } else |err| {
+            log.warn("couldnt init FAT32, err: {any}", .{err});
+            try self.errors.append(err);
+        }
+        if (NTFS.init(self.alloc, try self.create_new_reader())) |ntfs| return .{ .ntfs = ntfs } else |err| {
+            log.warn("couldnt init NTFS, err: {any}", .{err});
+            try self.errors.append(err);
+        }
 
         return Error.NoFilesystemMatch;
     }
 
+    /// *Reader is kept internally in an ArrayList.
+    /// Calling deinit on FilesystemHandler also deinits *Reader.
     pub fn create_new_reader(self: *Self) Error!*Reader {
         const f = try self.alloc.create(std.fs.File);
         errdefer self.alloc.destroy(f);
@@ -98,15 +111,46 @@ pub const FilesystemHandler = struct {
     }
 };
 
-const testing = std.testing;
-const t_alloc = testing.allocator;
-const assert = std.debug.assert;
-const FAT32_PATH = "./filesystems/fat32_filesystem.img";
-const log = std.log;
-
-test "create new reader cleans up everything when somethings goes wrong (file access err)" {
-    var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
-    defer fs_handler.deinit();
-    try testing.expectError(error.FileNotFound, fs_handler.create_new_reader());
-    try fs_handler.update_path(FAT32_PATH);
+test {
+    std.testing.refAllDecls(Tests);
 }
+
+const Tests = struct {
+    const testing = std.testing;
+    const t_alloc = testing.allocator;
+    const assert = std.debug.assert;
+    const FAT32_PATH = "./filesystems/fat32_filesystem.img";
+    const tlog = std.log.scoped(.filesystems_tests);
+
+    test "create new reader cleans up everything when somethings goes wrong (file access err)" {
+        var fs_handler = try FilesystemHandler.init(t_alloc, "this path doesnt exist");
+        defer fs_handler.deinit();
+        try testing.expectError(error.FileNotFound, fs_handler.create_new_reader());
+        try fs_handler.update_path(FAT32_PATH);
+    }
+
+    test "hold all errors found during determine_filesystem" {
+        var _dir = testing.tmpDir(.{});
+        defer _dir.cleanup();
+        const dir = _dir.dir;
+        const filename = "tmp_not_filesystem";
+        {
+            const tmp_file = try dir.createFile(filename, .{});
+            defer tmp_file.close();
+            _ = try tmp_file.write("siema elo tmp file");
+        }
+        const path = try dir.realpathAlloc(t_alloc, filename);
+        defer t_alloc.free(path);
+        tlog.debug("{s}", .{path});
+
+        var fs_handler = try FilesystemHandler.init(t_alloc, path);
+        defer fs_handler.deinit();
+        try testing.expectError(error.NoFilesystemMatch, fs_handler.determine_filesystem());
+        try testing.expectEqual(2, fs_handler.errors.items.len);
+        try testing.expectEqualSlices(
+            FilesystemHandler.Error,
+            fs_handler.errors.items,
+            &[_]FilesystemHandler.Error{ error.FileTooSmall, error.UnimplementedCurrently }
+        );
+    }
+};
