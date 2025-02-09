@@ -245,6 +245,7 @@ pub const FAT32 = struct {
     buf: []u8,
     filesystem: []u8,
     boot_sector: *BootSector,
+    count_of_clusters: usize,
     fat: []FileAllocationTable,
 
     const Self = @This();
@@ -292,6 +293,7 @@ pub const FAT32 = struct {
             .buf = buf[0..],
             .filesystem = mem,
             .boot_sector = bs,
+            .count_of_clusters = count_of_clusters,
             .fat = undefined,
         };
         self.fat = try self.parse_fat();
@@ -357,8 +359,12 @@ pub const FAT32 = struct {
 
     /// caller has to call destroy on the resulting pointer
     pub fn get_root_dir(self: Self) !*FAT32Dir {
-        const bs = self.boot_sector;
-        try self.reader.seek_to(bs.root_cluster);
+        return try self.get_dir(self.boot_sector.root_cluster);
+    }
+
+    pub fn get_dir(self: Self, cluster_number: usize) !*FAT32Dir {
+        assert(cluster_number >= self.boot_sector.root_cluster);
+        try self.reader.seek_to(cluster_number);
         const dir = try self.gpa.create(FAT32Dir);
         errdefer self.gpa.destroy(dir);
         const size = @sizeOf(FAT32Dir);
@@ -403,7 +409,8 @@ const Tests = struct {
         var fs = try fs_handler.determine_filesystem();
         defer fs.deinit();
 
-        const root_dir = try fs.fat32.get_root_dir();
+        const fat = fs.fat32;
+        const root_dir = try fat.get_root_dir();
         defer fs_handler.alloc.destroy(root_dir);
 
         try t.expect(std.mem.containsAtLeast(u8, &root_dir.name, 1, "mkfs.fat"));
@@ -414,5 +421,13 @@ const Tests = struct {
         try t.expectEqual(0, root_dir.fst_clus_hi);
         try t.expectEqual(0, root_dir.fst_clus_lo);
         try t.expectEqual(.VOLUME_ID, root_dir.attr);
+
+        // TODO: to continue fat32 start here: figure out how to read other cluster information (had no idea on how to navigate
+        // to next cluster because in read dir we seek_to(2) essentially which I don't understand at all)
+        // for (fat.boot_sector.root_cluster+1..fat.count_of_clusters, 0..) |clus_idx, counter| {
+        //     if (counter > 5) break;
+        //     const dir = try fat.get_dir(clus_idx);
+        //     lib.print(dir, null);
+        // }
     }
 };
