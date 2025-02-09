@@ -29,4 +29,9 @@ pub const EXT2 = struct {
     pub fn deinit(self: Self) void {
         _ = self;
     }
+
+    pub fn calc_size(self: Self) f64 {
+        _ = self;
+        return 0;
+    }
 };
