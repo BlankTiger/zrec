@@ -201,7 +201,9 @@ fn create_filesystems_step(b: *std.Build) *std.Build.Step {
 
     if (fs_dir_doesnt_exist) {
         const create_fat32 = b.addSystemCommand(&[_][]const u8{ "bash", "scripts/create_test_fat32_filesystem.sh" });
+        const create_ext2 = b.addSystemCommand(&[_][]const u8{ "bash", "scripts/create_test_ext2_filesystem.sh" });
         create.dependOn(&create_fat32.step);
+        create.dependOn(&create_ext2.step);
     }
 
     return create;
