@@ -4,6 +4,7 @@ const Reader = lib.Reader;
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.fat);
+const set_fields_alignment = lib.set_fields_alignment;
 
 fn join(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
     var res: [a.len + b.len]std.meta.Child(@TypeOf(a)) = undefined;
@@ -17,6 +18,8 @@ pub const FAT32 = struct {
         const fields = std.meta.fields;
         var fs = join(fields(BS_Part1), fields(BIOSParameterBlock));
         fs = join(fs, fields(BS_Part2));
+        // set all fields alignment to 1 (get rid of padding like #pragma pack)
+        fs = set_fields_alignment(fs, 1);
 
         const declarations = std.meta.declarations;
         var decls = join(declarations(BS_Part1), declarations(BIOSParameterBlock));
@@ -50,20 +53,20 @@ pub const FAT32 = struct {
         /// and
         /// jmp_boot[0] = 0xE9, jmp_boot[1] = 0x??,
         /// jmp_boot[2] = 0x??
-        jmp_boot: [3]u8 align(1),
-        oem_name: [8]u8 align(1),
+        jmp_boot: [3]u8,
+        oem_name: [8]u8,
     };
 
     /// Fields start from byte offset 11
     const BIOSParameterBlock = extern struct {
         /// Count of bytes per sector. This value may take on
         /// only the following values: 512, 1024, 2048 or 4096
-        bytes_per_sector: u16 align(1),
+        bytes_per_sector: u16,
 
         /// Number of sectors per allocation unit. This value
         /// must be a power of 2 that is greater than 0. The
         /// legal values are 1, 2, 4, 8, 16, 32, 64, and 128.
-        sectors_per_cluster: u8 align(1),
+        sectors_per_cluster: u8,
 
         /// Number of reserved sectors in the reserved region
         /// of the volume starting at the first sector of the
@@ -77,12 +80,12 @@ pub const FAT32 = struct {
         /// This field should typically be used to align the start
         /// of the data area (cluster #2) to the desired
         /// alignment unit, typically cluster size.
-        reserved_sector_count: u16 align(1),
+        reserved_sector_count: u16,
 
         /// The count of file allocation tables (FATs) on the
         /// volume. A value of 2 is recommended although a
         /// value of 1 is acceptable.
-        num_of_fats: u8 align(1),
+        num_of_fats: u8,
 
         /// For FAT12 and FAT16 volumes, this field contains
         /// the count of 32-byte directory entries in the root
@@ -90,7 +93,7 @@ pub const FAT32 = struct {
         /// to 0. For FAT12 and FAT16 volumes, this value
         /// should always specify a count that when multiplied
         /// by 32 results in an even multiple of bytes_per_sector.
-        root_entries_count: u16 align(1),
+        root_entries_count: u16,
 
         /// This field is the old 16-bit total count of sectors on
         /// the volume. This count includes the count of all
@@ -101,52 +104,52 @@ pub const FAT32 = struct {
         /// For FAT12 and FAT16 volumes, this field contains
         /// the sector count, and BPB_TotSec32 is 0 if the
         /// total sector count “fits” (is less than 0x10000)
-        total_sectors_16: u16 align(1),
+        total_sectors_16: u16,
 
         /// The legal values for this field are 0xF0, 0xF8, 0xF9,
         /// 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, and 0xFF.
         /// 0xF8 is the standard value for “fixed” (non-removable)
         /// media. For removable media, 0xF0 is
         /// frequently used.
-        media: u8 align(1),
+        media: u8,
 
-        fat_size_16: u16 align(1),
+        fat_size_16: u16,
 
-        sectors_per_track: u16 align(1),
+        sectors_per_track: u16,
 
-        num_of_heads: u16 align(1),
+        num_of_heads: u16,
 
-        hidden_sectors: u32 align(1),
+        hidden_sectors: u32,
 
-        total_sectors_32: u32 align(1),
+        total_sectors_32: u32,
 
-        fat_size_32: u32 align(1),
+        fat_size_32: u32,
 
-        extra_flags: u16 align(1),
+        extra_flags: u16,
 
         /// Must be 0, but high byte is major revision number.
         /// Low byte is minor revision number.
-        filesystem_version: u16 align(1),
+        filesystem_version: u16,
 
-        root_cluster: u32 align(1),
+        root_cluster: u32,
 
-        fsinfo_sector_number: u16 align(1),
+        fsinfo_sector_number: u16,
 
-        backup_boot_sector_number: u16 align(1),
+        backup_boot_sector_number: u16,
 
-        reserved: [12]u8 align(1),
+        reserved: [12]u8,
     };
 
     const BS_Part2 = extern struct {
         /// IMPORTANT: FIELDS CONTINUE AT BYTE OFFSET 64 FOR FAT32
-        drive_number: u8 align(1),
-        reserved_1: u8 align(1),
-        boot_signature: u8 align(1),
-        volume_serial_number: u32 align(1),
-        volume_label: [11]u8 align(1),
-        file_system_type: [8]u8 align(1),
-        reserved_2: [420]u8 align(1),
-        signature_word: [2]u8 align(1),
+        drive_number: u8,
+        reserved_1: u8,
+        boot_signature: u8,
+        volume_serial_number: u32,
+        volume_label: [11]u8,
+        file_system_type: [8]u8,
+        reserved_2: [420]u8,
+        signature_word: [2]u8,
         // all remaining bytes in the sector from byte offset 512 should be 0x00
         // if bytes_per_sector > 512
     };
