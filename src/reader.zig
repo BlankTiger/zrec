@@ -81,6 +81,7 @@ pub const MmapReader = struct {
     const Self = @This();
     const Error = posix.MMapError || posix.FStatError;
 
+    /// `file` is closed internally and should be passed in opened.
     pub fn init(file: *const std.fs.File) Error!Self {
         defer file.close();
         const fd = file.handle;

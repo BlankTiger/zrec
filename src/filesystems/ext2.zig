@@ -342,40 +342,25 @@ const Tests = struct {
     const t_alloc = t.allocator;
     const tlog = std.log.scoped(.ext2_tests);
 
-    fn determine_filesystem(path: []const u8) !FilesystemHandler.Filesystem {
-        var fs_handler = try FilesystemHandler.init(t_alloc, path);
-        defer fs_handler.deinit();
-
-        const filesystem = try fs_handler.determine_filesystem();
-        return filesystem;
+    fn create_ext2_reader() !Reader {
+        const f = try std.fs.cwd().openFile(EXT2_PATH, .{});
+        return try Reader.init(&f);
     }
 
-    fn parse_cstr(slice: []const u8) []const u8 {
-        for (slice, 0..) |c, c_idx| {
-            if (c == 0) {
-                return slice[0..c_idx];
-            }
+    fn parse_cstr(cstr_slice: []const u8) []const u8 {
+        for (cstr_slice, 0..) |c, c_idx| {
+            if (c == 0) return cstr_slice[0..c_idx];
         }
         return "";
     }
 
-    test "FilesystemHandler correctly determines that its an EXT2 fs" {
-        var fs = try determine_filesystem(EXT2_PATH);
-        defer fs.deinit();
-
-        switch (fs) {
-            .ext2 => {},
-            else => unreachable,
-        }
-    }
-
     test "has superblock at SuperblockOffset" {
-        var fs = try determine_filesystem(EXT2_PATH);
-        defer fs.deinit();
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        const ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
 
-        const ext2 = fs.ext2;
         try t.expectEqual(64000, ext2.superblock.inodes_count);
-
         const expected_ending = "zrec/mnt";
         const last_mounted = parse_cstr(&ext2.superblock.last_mounted);
         try t.expectEqualSlices(u8, expected_ending, last_mounted[last_mounted.len-expected_ending.len..]);
