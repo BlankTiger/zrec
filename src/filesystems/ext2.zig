@@ -165,8 +165,8 @@ pub const EXT2 = struct {
         /// can be used to rebuild the file system from any superblock backup.
         block_group_nr: u16,
 
-        /// Bitmask of compatible features. The file system implementation is
-        /// free to support them or not without risk of damaging the meta-data.
+        /// Bitmask of compatible features. The file system implementation is free to support them
+        /// or not without risk of damaging the meta-data.
         feature_compat: packed struct(u32) {
             /// Block pre-allocation for new directories.
             EXT2_FEATURE_COMPAT_DIR_PREALLOC:  bool,
@@ -182,14 +182,13 @@ pub const EXT2 = struct {
             __unused:                           u26,
         },
 
-        /// Bitmask of incompatible features. The file system implementation
-        /// should refuse to mount the file system if any of the indicated
-        /// feature is unsupported.
+        /// Bitmask of incompatible features. The file system implementation should refuse to mount
+        /// the file system if any of the indicated feature is unsupported.
         ///
-        /// An implementation not supporting these features would be unable to
-        /// properly use the file system. For example, if compression is being
-        /// used and an executable file would be unusable after being read from
-        /// the disk if the system does not know how to uncompress it.
+        /// An implementation not supporting these features would be unable to properly use the file
+        /// system. For example, if compression is being used and an executable file would be
+        /// unusable after being read from the disk if the system does not know how to uncompress
+        /// it.
         feature_incompat: packed struct(u32) {
             /// Disk/File compression is used.
             EXT2_FEATURE_INCOMPAT_COMPRESSION: bool,
@@ -199,31 +198,88 @@ pub const EXT2 = struct {
             EXT2_FEATURE_INCOMPAT_META_BG:     bool,
             __unused:                           u27,
         },
-        feature_ro_compat: u32,
+
+        /// Bitmask of “read-only” features. The file system implementation should mount as
+        /// read-only if any of the indicated feature is unsupported.
+        feature_ro_compat: packed struct(u32) {
+            /// Sparse Superblock.
+            EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER: bool,
+            /// Large file support, 64-bit file size.
+            EXT2_FEATURE_RO_COMPAT_LARGE_FILE:   bool,
+            /// Binary tree sorted directory files.
+            EXT2_FEATURE_RO_COMPAT_BTREE_DIR:    bool,
+            __unused:                             u29,
+        },
+
+        /// Value used as the volume id. This should, as much as possible, be unique for each file
+        /// system formatted.
         uuid: [16]u8,
+
+        /// Volume name, mostly unusued. A valid volume name would consist of only ISO-Latin-1
+        /// characters and be 0 terminated.
         volume_name: [16]u8,
+
+        /// Directory path where the file system was last mounted. While not normally used, it could
+        /// serve for auto-finding the mountpoint when not indicated on the command line. Again the
+        /// path should be zero terminated for compatibility reasons. Valid path is constructed from
+        /// ISO-Latin-1 characters.
         last_mounted: [64]u8,
-        algo_bitmap: u32,
+
+        /// Value used by compression algorithms to determine the compression method(s) used.
+        algo_bitmap: packed struct(u32) {
+            EXT2_LZV1_ALG:   bool,
+            EXT2_LZRW3A_ALG: bool,
+            EXT2_GZIP_ALG:   bool,
+            EXT2_BZIP2_ALG:  bool,
+            EXT2_LZO_ALG:    bool,
+            __unused:         u27,
+        },
 
         // Performance hints
+
+        /// Value representing the number of blocks the implementation should attempt to
+        /// pre-allocate when creating a new regular file.
         prealloc_blocks: u8,
+
+        /// Value representing the number of blocks the implementation should attempt to
+        /// pre-allocate when creating a new directory.
         prealloc_dir_blocks: u8,
+
         __alignment: u16,
 
         // Journaling support
+
+        /// Value containing the uuid of the journal superblock.
         journal_uuid: [16]u8,
+
+        /// Inode number of the journal file.
         journal_inum: u32,
+
+        /// Device number of the journal file.
         journal_dev: u32,
+
+        /// Inode number, pointing to the first inode in the list of inodes to delete.
         last_orphan: u32,
 
         // Directory indexing support
-        hash_seed: [4*4]u8,
+
+        /// An array of 4 32bit values containing the seeds used for the hash algorithm for
+        /// directory indexing.
+        hash_seed: [4]u32,
+
+        /// Value containing the default hash version used for directory indexing.
         def_hash_version: u8,
+
         __padding_reserved: [3]u8,
 
         // Other options
+
+        /// Value containing the default mount options for this file system.
         default_mount_options: u32,
+
+        /// Value indicating the block group ID of the first meta block group.
         first_meta_bg: u32,
+
         __unused_reserved: [760]u8,
     };
 
