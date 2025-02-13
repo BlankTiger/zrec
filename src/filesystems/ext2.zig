@@ -329,6 +329,10 @@ pub const EXT2 = struct {
         return s;
     }
 
+    fn block_size(self: Self) u64 {
+        const size: u64 = 1024;
+        return std.math.shl(u64, size, self.superblock.log_block_size);
+    }
 };
 
 test {
@@ -361,6 +365,7 @@ const Tests = struct {
         defer ext2.deinit();
 
         try t.expectEqual(64000, ext2.superblock.inodes_count);
+        try t.expectEqual(4096, ext2.block_size());
         const expected_ending = "zrec/mnt";
         const last_mounted = parse_cstr(&ext2.superblock.last_mounted);
         try t.expectEqualSlices(u8, expected_ending, last_mounted[last_mounted.len-expected_ending.len..]);
