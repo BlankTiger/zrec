@@ -6,6 +6,8 @@ const log = std.log.scoped(.ext2);
 const set_fields_alignment_in_struct = lib.set_fields_alignment_in_struct;
 
 pub const EXT2 = struct {
+    const SuperblockOffset = 0x400;
+
     /// 1024 bytes in size, in revision 0 at beginning of every block group.
     /// From revision 1 of EXT2 they can be placed sparsely every other block.
     pub const Superblock = set_fields_alignment_in_struct(_Superblock, 1);
@@ -290,28 +292,43 @@ pub const EXT2 = struct {
             NotEXT2,
             FileTooSmall,
             UnimplementedCurrently,
+            NotEnoughReadToParseSuperblock,
         };
     const Self = @This();
 
     gpa: Allocator,
     reader: *Reader,
+    superblock: *Superblock,
 
     pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
-        if (true) return error.UnimplementedCurrently;
         return .{
             .gpa = gpa,
             .reader = reader,
+            .superblock = try parse_superblock(gpa, reader),
         };
     }
 
     pub fn deinit(self: Self) void {
-        _ = self;
+        self.gpa.destroy(self.superblock);
     }
 
     pub fn calc_size(self: Self) f64 {
         _ = self;
         return 0;
     }
+
+    fn parse_superblock(gpa: Allocator, reader: *Reader) Error!*Superblock {
+        const s = try gpa.create(Superblock);
+        errdefer gpa.destroy(s);
+
+        const dest = std.mem.asBytes(s);
+        try reader.seek_to(SuperblockOffset);
+        const read = try reader.read(dest);
+        if (read != dest.len) return error.NotEnoughReadToParseSuperblock;
+
+        return s;
+    }
+
 };
 
 test {
@@ -325,6 +342,42 @@ const Tests = struct {
     const t_alloc = t.allocator;
     const tlog = std.log.scoped(.ext2_tests);
 
-    test "has superblock at offset 1K" {
+    fn determine_filesystem(path: []const u8) !FilesystemHandler.Filesystem {
+        var fs_handler = try FilesystemHandler.init(t_alloc, path);
+        defer fs_handler.deinit();
+
+        const filesystem = try fs_handler.determine_filesystem();
+        return filesystem;
+    }
+
+    fn parse_cstr(slice: []const u8) []const u8 {
+        for (slice, 0..) |c, c_idx| {
+            if (c == 0) {
+                return slice[0..c_idx];
+            }
+        }
+        return "";
+    }
+
+    test "FilesystemHandler correctly determines that its an EXT2 fs" {
+        var fs = try determine_filesystem(EXT2_PATH);
+        defer fs.deinit();
+
+        switch (fs) {
+            .ext2 => {},
+            else => unreachable,
+        }
+    }
+
+    test "has superblock at SuperblockOffset" {
+        var fs = try determine_filesystem(EXT2_PATH);
+        defer fs.deinit();
+
+        const ext2 = fs.ext2;
+        try t.expectEqual(64000, ext2.superblock.inodes_count);
+
+        const expected_ending = "zrec/mnt";
+        const last_mounted = parse_cstr(&ext2.superblock.last_mounted);
+        try t.expectEqualSlices(u8, expected_ending, last_mounted[last_mounted.len-expected_ending.len..]);
     }
 };

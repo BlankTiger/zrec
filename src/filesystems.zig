@@ -155,7 +155,7 @@ const Tests = struct {
             &[_]FilesystemHandler.Error{
                 error.FileTooSmall,
                 error.UnimplementedCurrently,
-                error.UnimplementedCurrently
+                error.NotEnoughReadToParseSuperblock,
             }
         );
     }
