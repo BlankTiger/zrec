@@ -89,7 +89,7 @@ pub const FilesystemHandler = struct {
             if (field.type.init(self.alloc, try self.create_new_reader())) |fs| {
                 return @unionInit(Filesystem, field.name, fs);
             } else |err| {
-                log.warn("couldnt init {any}, err: {any}", .{field.type, err});
+                log.info("couldnt init {any}, err: {any}", .{field.type, err});
                 try self.errors.append(err);
             }
         }
