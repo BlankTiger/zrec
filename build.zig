@@ -200,8 +200,10 @@ fn create_filesystems_step(b: *std.Build) *std.Build.Step {
     const fs_dir_doesnt_exist = std.fs.cwd().openDir("./filesystems", .{}) == error.FileNotFound;
 
     if (fs_dir_doesnt_exist) {
-        const create_fat32 = b.addSystemCommand(&[_][]const u8{ "bash", "scripts/create_test_fat32_filesystem.sh" });
-        const create_ext2 = b.addSystemCommand(&[_][]const u8{ "bash", "scripts/create_test_ext2_filesystem.sh" });
+        // TODO: figure out if its possible to create a compilation step with an imported
+        // zig function
+        const create_fat32 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_fat32_filesystem.zig" });
+        const create_ext2 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_ext2_filesystem.zig" });
         create.dependOn(&create_fat32.step);
         create.dependOn(&create_ext2.step);
     }
