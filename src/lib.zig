@@ -1,9 +1,9 @@
 const std = @import("std");
-const filesystems = @import("filesystems.zig");
 const filetypes = @import("filetypes.zig");
 const reader = @import("reader.zig");
 const printer = @import("printer.zig");
 const utils = @import("utils.zig");
+pub const FilesystemHandler = @import("FilesystemHandler.zig");
 
 pub const ReadReader = reader.ReadReader;
 pub const MmapReader = reader.MmapReader;
@@ -18,8 +18,6 @@ pub const print = printer.print;
 pub const PrintOpts = printer.Opts;
 pub const set_fields_alignment = utils.set_fields_alignment;
 pub const set_fields_alignment_in_struct = utils.set_fields_alignment_in_struct;
-
-pub const FilesystemHandler = filesystems.FilesystemHandler;
 
 test {
     std.testing.refAllDecls(@This());

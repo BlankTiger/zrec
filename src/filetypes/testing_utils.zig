@@ -1,5 +1,6 @@
 const std = @import("std");
-const FsHandler = @import("../filesystems.zig").FilesystemHandler;
+const lib = @import("../lib.zig");
+const FsHandler = lib.FilesystemHandler;
 const testing = std.testing;
 const t_alloc = testing.allocator;
 const log = std.log.scoped(.filetypes_testing_utils);

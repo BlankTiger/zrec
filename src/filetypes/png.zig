@@ -148,7 +148,7 @@ test {
 const Tests = struct {
     const t = std.testing;
     const t_alloc = t.allocator;
-    const FsHandler = @import("../filesystems.zig").FilesystemHandler;
+    const FsHandler = lib.FilesystemHandler;
     const utils = @import("testing_utils.zig");
     const testing_fs_handler = utils.testing_fs_handler;
     const hash = utils.hash;
