@@ -15,9 +15,7 @@ pub fn main() !void {
         log.debug("mnt directory already exists", .{});
     };
 
-    var creator = FsCreator.FAT32Creator;
-    creator.alloc = arena;
-    creator.cwd = cwd;
+    const creator: FsCreator = .init(.fat32, arena, cwd);
 
     try creator.truncate();
     try creator.mkfs();

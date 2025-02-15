@@ -15,9 +15,7 @@ pub fn main() !void {
         log.debug("mnt directory already exists", .{});
     };
 
-    var creator = FsCreator.EXT2Creator;
-    creator.alloc = arena;
-    creator.cwd = cwd;
+    const creator: FsCreator = .init(.ext2, arena, cwd);
 
     try creator.truncate();
     try creator.mkfs();

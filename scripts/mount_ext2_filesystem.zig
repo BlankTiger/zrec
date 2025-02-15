@@ -8,9 +8,6 @@ pub fn main() !void {
     const arena = arena_state.allocator();
 
     const cwd = std.fs.cwd();
-    var creator = FsCreator.EXT2Creator;
-    creator.alloc = arena;
-    creator.cwd = cwd;
-
+    const creator: FsCreator = .init(.ext2, arena, cwd);
     try creator.mount();
 }

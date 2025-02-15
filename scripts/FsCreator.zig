@@ -1,7 +1,24 @@
 const std = @import("std");
 const log = std.log.scoped(.fs_creator);
 
-pub const EXT2Creator: Self = .{
+pub const FSType = enum {
+    fat32,
+    ntfs,
+    ext2,
+};
+
+pub fn init(fs_type: FSType, alloc: std.mem.Allocator, cwd: std.fs.Dir) Self {
+    var creator = switch (fs_type) {
+        .fat32 => fat32_creator,
+        .ntfs  => ntfs_creator,
+        .ext2  => ext2_creator,
+    };
+    creator.alloc = alloc;
+    creator.cwd = cwd;
+    return creator;
+}
+
+const ext2_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
     .path = "filesystems/ext2_filesystem.img",
@@ -9,7 +26,7 @@ pub const EXT2Creator: Self = .{
     .size = 1000,
 };
 
-pub const FAT32Creator: Self = .{
+const fat32_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
     .path = "filesystems/fat32_filesystem.img",
@@ -17,7 +34,7 @@ pub const FAT32Creator: Self = .{
     .size = 1000,
 };
 
-pub const NTFSCreator: Self = .{
+const ntfs_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
     .path = "filesystems/ntfs_filesystem.img",

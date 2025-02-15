@@ -15,9 +15,7 @@ pub fn main() !void {
         log.debug("mnt directory already exists", .{});
     };
 
-    var creator = FsCreator.NTFSCreator;
-    creator.alloc = arena;
-    creator.cwd = cwd;
+    const creator: FsCreator = .init(.ntfs, arena, cwd);
 
     try creator.truncate();
     _ = try std.process.Child.run(
