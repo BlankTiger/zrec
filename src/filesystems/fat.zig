@@ -390,7 +390,6 @@ const Tests = struct {
     const tlog = std.log.scoped(.fat_tests);
 
     test "fresh fat32 is read as expected with all backup info in sector 6" {
-        t.log_level = .debug;
         var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
         var fs = try fs_handler.determine_filesystem();
         defer fs_handler.deinit();
@@ -406,7 +405,6 @@ const Tests = struct {
     }
 
     test "read root cluster" {
-        t.log_level = .debug;
         var fs_handler: FilesystemHandler = try .init(t_alloc, FAT32_PATH);
         defer fs_handler.deinit();
         var fs = try fs_handler.determine_filesystem();

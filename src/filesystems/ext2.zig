@@ -284,11 +284,11 @@ pub const EXT2 = struct {
 
         __unused_reserved: [760]u8 align(1),
 
-        pub fn block_size(self: Superblock) u32 {
+        fn block_size(self: Superblock) u32 {
             return std.math.shl(u32, 1024, self.log_block_size);
         }
 
-        pub fn n_groups(self: Superblock) u32 {
+        fn n_groups(self: Superblock) u32 {
             return self.inodes_count / self.inodes_per_group;
         }
     };
@@ -344,18 +344,26 @@ pub const EXT2 = struct {
     reader: *Reader,
     superblock: *Superblock,
     bg_desc_table: BlockGroupDescriptorTable,
+    n_groups: u32,
+    block_size: u32,
+    is_sparse: bool,
 
     pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
         const superblock = try parse_superblock(gpa, reader);
         if (superblock.magic != 0xef53) return error.NotEXT2;
 
-        const bg_desc_table = try parse_bg_desc_table(gpa, reader, superblock);
-        return .{
+        var self: Self = .{
             .gpa = gpa,
             .reader = reader,
             .superblock = superblock,
-            .bg_desc_table = bg_desc_table,
+            .bg_desc_table = undefined,
+            .n_groups = superblock.n_groups(),
+            .block_size = superblock.block_size(),
+            .is_sparse = superblock.feature_ro_compat.EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER,
         };
+        self.bg_desc_table = try parse_bg_desc_table(self);
+
+        return self;
     }
 
     pub fn deinit(self: Self) void {
@@ -369,33 +377,72 @@ pub const EXT2 = struct {
     }
 
     fn parse_superblock(gpa: Allocator, reader: *Reader) Error!*Superblock {
+        return try parse_superblock_at_offset(gpa, reader, SuperblockOffset);
+    }
+
+    fn parse_superblock_at_offset(gpa: Allocator, reader: *Reader, offset: usize) Error!*Superblock {
         const s = try gpa.create(Superblock);
         errdefer gpa.destroy(s);
 
         const dest = std.mem.asBytes(s);
-        try reader.seek_to(SuperblockOffset);
+        try reader.seek_to(offset);
         const read = try reader.read(dest);
         if (read != dest.len) return error.NotEnoughReadToParseSuperblock;
 
         return s;
     }
 
-    fn parse_bg_desc_table(gpa: Allocator, reader: *Reader, s: *Superblock) Error!BlockGroupDescriptorTable {
-        const n_groups = s.n_groups();
-        const table = try gpa.alloc(BlockGroupDescriptor, n_groups);
-        errdefer gpa.free(table);
+    fn parse_bg_desc_table(self: Self) Error!BlockGroupDescriptorTable {
+        const offset = self.block_group_desc_table_offset(0);
+        return try self.parse_bg_desc_table_at_offset(offset);
+    }
 
-        const bs = s.block_size();
-        const offset = if (bs == 1024) bs * 2 else bs;
-        try reader.seek_to(offset);
-        const size = n_groups * @sizeOf(BlockGroupDescriptor);
+    fn parse_bg_desc_table_at_offset(self: Self, offset: usize) Error!BlockGroupDescriptorTable {
+        const table = try self.gpa.alloc(BlockGroupDescriptor, self.n_groups);
+        errdefer self.gpa.free(table);
+
+        try self.reader.seek_to(offset);
+        const size = self.n_groups * @sizeOf(BlockGroupDescriptor);
         const dest: []u8 = @as([*]u8, @ptrCast(table))[0..size];
-        const read = try reader.read(dest);
+        const read = try self.reader.read(dest);
         if (read != size) return error.NotEnoughReadToBlockGroup;
 
         return table;
     }
 
+    /// Should always be the next block over from superblock (check if filesystem has sparse copies).
+    fn block_group_desc_table_offset(self: Self, group_idx: usize) usize {
+        if (group_idx == 0) return if (self.block_size == @sizeOf(Superblock)) self.block_size * 2 else self.block_size;
+        const bg_offset = self.block_group_offset(group_idx);
+        return bg_offset + self.block_size;
+    }
+
+    fn block_group_offset(self: Self, group_idx: usize) usize {
+        if (group_idx == 0) return SuperblockOffset;
+        return self.block_size * group_idx * self.superblock.blocks_per_group;
+    }
+
+    fn is_backup_block_group(self: Self, block_group_idx: usize) bool {
+        if (!self.is_sparse) return true;
+        if (block_group_idx == 1) return true;
+
+        // power of 3, 5, 7
+        if (is_power_of_base(block_group_idx, 3) or is_power_of_base(block_group_idx, 5) or is_power_of_base(block_group_idx, 7))
+            return true;
+
+        return false;
+    }
+
+    fn is_power_of_base(num: usize, base: usize) bool {
+        var n = num;
+        if (n == 0) return false;
+
+        while (n % base == 0) {
+            n /= base;
+        }
+
+        return n == 1;
+    }
 };
 
 test {
@@ -435,7 +482,40 @@ const Tests = struct {
         try t.expectEqualSlices(u8, expected_ending, last_mounted[last_mounted.len-expected_ending.len..]);
     }
 
-    test "has copies of the superblock" {}
+    fn expectEqualSuperblock(expected: *EXT2.Superblock, actual: *EXT2.Superblock) error{TestExpectedEqual}!void {
+        inline for(std.meta.fields(@TypeOf(expected.*))) |f| {
+            comptime if (std.mem.eql(u8, f.name, "block_group_nr")) continue;
+            try t.expectEqualDeep(@field(expected, f.name), @field(actual, f.name));
+        }
+    }
+
+    test "has copies of the superblock and block group descriptor table" {
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        const ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
+
+        const superblock = try EXT2.parse_superblock_at_offset(ext2.gpa, ext2.reader, ext2.block_group_offset(1));
+        defer ext2.gpa.destroy(superblock);
+
+        const bg_desc_table = try EXT2.parse_bg_desc_table_at_offset(ext2, ext2.block_group_desc_table_offset(1));
+        defer ext2.gpa.free(bg_desc_table);
+
+        for (2..ext2.n_groups + 1) |idx| {
+            if (!ext2.is_backup_block_group(idx)) continue;
+
+            const superblock_offset = ext2.block_group_offset(idx);
+            const copy_superblock = try EXT2.parse_superblock_at_offset(ext2.gpa, ext2.reader, superblock_offset);
+            defer ext2.gpa.destroy(copy_superblock);
+
+            const bg_desc_table_offset = ext2.block_group_desc_table_offset(idx);
+            const copy_bg_desc_table = try EXT2.parse_bg_desc_table_at_offset(ext2, bg_desc_table_offset);
+            defer ext2.gpa.free(copy_bg_desc_table);
+
+            try expectEqualSuperblock(superblock, copy_superblock);
+            try t.expectEqualSlices(EXT2.BlockGroupDescriptor, bg_desc_table, copy_bg_desc_table);
+        }
+    }
 
     test "block descriptor group table starts at the first block after superblock" {
         var reader = try create_ext2_reader();
@@ -443,10 +523,19 @@ const Tests = struct {
         const ext2 = try EXT2.init(t_alloc, &reader);
         defer ext2.deinit();
 
-        for (ext2.bg_desc_table) |bg| lib.print(bg, null);
+        try t.expectEqual(8, ext2.bg_desc_table.len);
+        try t.expectEqualDeep(
+            EXT2.BlockGroupDescriptor {
+                .block_bitmap = 64,
+                .inode_bitmap = 65,
+                .inode_table = 66,
+                .free_blocks_count = 30823,
+                .free_inodes_count = 7989,
+                .used_dirs_count = 2,
+                .__padding = 4,
+                .__reserved = [_]u8{ 0 } ** 12,
+            },
+            ext2.bg_desc_table[0],
+        );
     }
-
-    test "copy of block group descriptor is also stored with every copy of the superblock" {}
-
-    test "read first block descriptors" {}
 };
