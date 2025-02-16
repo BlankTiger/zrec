@@ -371,8 +371,12 @@ pub const EXT2 = struct {
         self.gpa.free(self.bg_desc_table);
     }
 
-    pub fn calc_size(self: Self) f64 {
+    pub fn get_size(self: Self) f64 {
         return @floatFromInt(self.superblock.blocks_count * self.block_size);
+    }
+
+    pub fn get_free_size(self: Self) f64 {
+        return @floatFromInt(self.superblock.free_blocks_count * self.block_size);
     }
 
     fn parse_superblock(gpa: Allocator, reader: *Reader) Error!*Superblock {

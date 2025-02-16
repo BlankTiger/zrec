@@ -64,9 +64,7 @@ pub const Filesystem = union(enum) {
     // ext4: EXT4,
 
     pub fn deinit(self: *Filesystem) void {
-        switch (self.*) {
-            inline else => |*it| it.deinit(),
-        }
+        switch (self.*) { inline else => |*it| it.deinit() }
         self.* = undefined;
     }
 
@@ -75,10 +73,13 @@ pub const Filesystem = union(enum) {
     }
 
     /// Returns size of the filesystem in bytes.
-    pub fn calc_size(self: Filesystem) f64 {
-        return switch (self) {
-            inline else => |*it| it.calc_size(),
-        };
+    pub fn get_size(self: Filesystem) f64 {
+        return switch (self) { inline else => |*it| it.get_size() };
+    }
+
+    /// Returns free size of the filesystem in bytes.
+    pub fn get_free_size(self: Filesystem) f64 {
+        return switch (self) { inline else => |*it| it.get_free_size() };
     }
 };
 

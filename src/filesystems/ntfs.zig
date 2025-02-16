@@ -38,8 +38,13 @@ pub const NTFS = struct {
         self.* = undefined;
     }
 
-    pub fn calc_size(self: Self) f64 {
+    pub fn get_size(self: Self) f64 {
         _ = self;
-        return 0;
+        unreachable;
+    }
+
+    pub fn get_free_size(self: Self) f64 {
+        _ = self;
+        unreachable;
     }
 };

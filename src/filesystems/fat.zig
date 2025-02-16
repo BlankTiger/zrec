@@ -346,19 +346,21 @@ pub const FAT32 = struct {
         return try parse_boot_sector(self.gpa, mem);
     }
 
-    pub fn calc_size(self: Self) f64 {
+    pub fn get_size(self: Self) f64 {
         const bs = self.boot_sector;
         const root_dir_sectors = ((bs.root_entries_count * 32) + (bs.bytes_per_sector - 1)) / bs.bytes_per_sector;
         const fat_size = bs.fat_size_32;
         const total_sectors = bs.total_sectors_32;
         const data_sectors = total_sectors - (bs.reserved_sector_count + (bs.num_of_fats * fat_size) + root_dir_sectors);
         const count_of_clusters = data_sectors / bs.sectors_per_cluster;
-        const size = bs.sectors_per_cluster * count_of_clusters * bs.bytes_per_sector;
-        return @floatFromInt(size);
+        const s = bs.sectors_per_cluster * count_of_clusters * bs.bytes_per_sector;
+        return @floatFromInt(s);
     }
 
-    // TODO:
-    // pub fn calc_free(self: Self) f64 {}
+    pub fn get_free_size(self: Self) f64 {
+        _ = self;
+        unreachable;
+    }
 
     /// caller has to call destroy on the resulting pointer
     pub fn get_root_dir(self: Self) !*FAT32Dir {
