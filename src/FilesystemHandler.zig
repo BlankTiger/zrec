@@ -74,12 +74,12 @@ pub const Filesystem = union(enum) {
         return @tagName(self);
     }
 
+    /// Returns size of the filesystem in bytes.
     pub fn calc_size(self: Filesystem) f64 {
         return switch (self) {
             inline else => |*it| it.calc_size(),
         };
     }
-
 };
 
 /// Caller must call deinit on the resulting Filesystem

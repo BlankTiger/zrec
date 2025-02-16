@@ -372,8 +372,7 @@ pub const EXT2 = struct {
     }
 
     pub fn calc_size(self: Self) f64 {
-        _ = self;
-        return 0;
+        return @floatFromInt(self.superblock.blocks_count * self.block_size);
     }
 
     fn parse_superblock(gpa: Allocator, reader: *Reader) Error!*Superblock {
