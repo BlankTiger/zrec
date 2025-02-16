@@ -132,8 +132,8 @@ fn build_and_run_step(b: *std.Build) !void {
 }
 
 fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {
-    const only_run_this = b.option([]const u8, "only", "Only run tests matching this") orelse "";
-    const filters: []const []const u8 = if (only_run_this.len == 0) &.{} else &.{ only_run_this };
+    const filters: []const []const u8 =
+        b.option([]const []const u8, "test-filter", "Only run tests matching this") orelse &.{};
     const test_s = b.step("test", "Run unit tests");
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),

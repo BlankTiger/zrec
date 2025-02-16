@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lib = @import("../lib.zig");
 const Reader = lib.Reader;
+const assert = std.debug.assert;
 const log = std.log.scoped(.ext2);
 const set_fields_alignment_in_struct = lib.set_fields_alignment_in_struct;
 const set_fields_alignment = lib.set_fields_alignment;
@@ -328,6 +329,28 @@ pub const EXT2 = struct {
         __reserved: [12]u8,
     };
 
+    pub const Inode = set_fields_alignment_in_struct(_Inode, 1);
+    const _Inode = extern struct {
+        mode: u16,
+        uid: u16,
+        size: u32,
+        atime: u32,
+        ctime: u32,
+        mtime: u32,
+        dtime: u32,
+        gid: u16,
+        links_count: u16,
+        blocks: u32,
+        flags: u32,
+        osd1: u32,
+        block: [15]u32,
+        generation: u32,
+        file_acl: u32,
+        dir_acl: u32,
+        faddr: u32,
+        osd2: [12]u8,
+    };
+
     pub const Error =
         Allocator.Error
         || std.fs.File.ReadError
@@ -446,7 +469,26 @@ pub const EXT2 = struct {
 
         return n == 1;
     }
+
+    const ROOT_INODE = 2;
+
+    fn list_files(self: Self, inode_id: u32) !void {
+        _ = self;
+        _ = inode_id;
+    }
+
+    fn get_used_blocks_in_group(self: Self, group_id: u32) u32 {
+        assert(group_id < self.bg_desc_table.len);
+        return self.superblock.blocks_per_group - self.bg_desc_table[group_id].free_blocks_count;
+    }
 };
+
+fn count_bits_on(bytes: []u8) u32 {
+    var count: u32 = 0;
+    for (bytes) |b| count += @popCount(b);
+    return count;
+}
+
 
 test {
     std.testing.refAllDecls(Tests);
@@ -540,5 +582,25 @@ const Tests = struct {
             },
             ext2.bg_desc_table[0],
         );
+    }
+
+    fn get_used_blocks_in_group_dumb(self: EXT2, group_id: u32) !u32 {
+        assert(group_id < self.bg_desc_table.len);
+        const block_bitmap_off = self.bg_desc_table[group_id].block_bitmap * self.block_size;
+        try self.reader.seek_to(block_bitmap_off);
+        const mem = try self.gpa.alloc(u8, self.superblock.blocks_per_group / 8);
+        defer self.gpa.free(mem);
+        _ = try self.reader.read(mem);
+        const used_blocks = count_bits_on(mem);
+        return used_blocks;
+    }
+
+    test "used blocks in group match" {
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        const ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
+
+        try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(ext2, 0));
     }
 };
