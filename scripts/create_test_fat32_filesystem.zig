@@ -7,16 +7,8 @@ pub fn main() !void {
     defer std.debug.assert(arena_state.reset(.free_all));
     const arena = arena_state.allocator();
 
-    const cwd = std.fs.cwd();
-    cwd.makeDir("filesystems") catch {
-        log.debug("filesystems directory already exists", .{});
-    };
-    cwd.makeDir("mnt") catch {
-        log.debug("mnt directory already exists", .{});
-    };
-
-    const creator: FsCreator = .init(.fat32, arena, cwd);
-
+    const creator: FsCreator = .init(.fat32, arena);
+    try creator.prepare_workspace();
     try creator.truncate();
     try creator.mkfs();
     try creator.mount();

@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
 
     clean_all_step(b);
     const clean = clean_step(b);
-    const create_fs = create_filesystems_step(b);
+    const create_fs = try create_filesystems_step(b);
     test_step(b, clean, create_fs);
     bench_step(b, clean, create_fs);
     docs_step(b);
@@ -195,17 +195,17 @@ fn clean_all_step(b: *std.Build) void {
     clean.dependOn(&remove_filesystems_dir.step);
 }
 
-fn create_filesystems_step(b: *std.Build) *std.Build.Step {
+fn create_filesystems_step(b: *std.Build) !*std.Build.Step {
     const create = b.step("create-filesystems", "Create filesystems for testing");
     const fs_dir_doesnt_exist = std.fs.cwd().openDir("./filesystems", .{}) == error.FileNotFound;
 
     if (fs_dir_doesnt_exist) {
         // TODO: figure out if its possible to create a compilation step with an imported
         // zig function
-        const create_fat32 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_fat32_filesystem.zig" });
-        const create_ext2 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_ext2_filesystem.zig" });
-        create.dependOn(&create_fat32.step);
-        create.dependOn(&create_ext2.step);
+        try @import("scripts/create_test_ext2_filesystem.zig").main();
+        // const create_ext2 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_ext2_filesystem.zig" });
+        try @import("scripts/create_test_fat32_filesystem.zig").main();
+        // const create_fat32 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_fat32_filesystem.zig" });
     }
 
     return create;

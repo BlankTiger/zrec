@@ -7,7 +7,6 @@ pub fn main() !void {
     defer std.debug.assert(arena_state.reset(.free_all));
     const arena = arena_state.allocator();
 
-    const cwd = std.fs.cwd();
-    const creator: FsCreator = .init(.ext2, arena, cwd);
+    const creator: FsCreator = .init(.ext2, arena);
     try creator.mount();
 }

@@ -7,14 +7,14 @@ pub const FSType = enum {
     ext2,
 };
 
-pub fn init(fs_type: FSType, alloc: std.mem.Allocator, cwd: std.fs.Dir) Self {
+pub fn init(fs_type: FSType, alloc: std.mem.Allocator) Self {
     var creator = switch (fs_type) {
         .fat32 => fat32_creator,
         .ntfs  => ntfs_creator,
         .ext2  => ext2_creator,
     };
     creator.alloc = alloc;
-    creator.cwd = cwd;
+    creator.cwd = std.fs.cwd();
     return creator;
 }
 
@@ -51,9 +51,40 @@ size: usize,
 
 const Self = @This();
 
-fn log_res(res: std.process.Child.RunResult) void {
+fn handle_res(res: std.process.Child.RunResult) void {
+    handle_res_exit(res, true);
+}
+
+fn handle_res_exit(res: std.process.Child.RunResult, exit: bool) void {
     if (res.stdout.len > 0) log.debug("{s}", .{res.stdout});
     if (res.stderr.len > 0) log.err("{s}", .{res.stderr});
+    if (res.term.Exited != 0 and exit) std.process.exit(res.term.Exited);
+}
+
+pub fn prepare_workspace(self: Self) !void {
+    const res = try std.process.Child.run(
+        .{
+            .allocator = self.alloc,
+            .cwd_dir = self.cwd,
+            .argv = &.{
+                "mkdir",
+                "filesystems",
+            }
+        }
+    );
+    handle_res_exit(res, false);
+
+    const res2 = try std.process.Child.run(
+        .{
+            .allocator = self.alloc,
+            .cwd_dir = self.cwd,
+            .argv = &.{
+                "mkdir",
+                "mnt",
+            }
+        }
+    );
+    handle_res_exit(res2, false);
 }
 
 pub fn truncate(self: Self) !void {
@@ -68,7 +99,7 @@ pub fn truncate(self: Self) !void {
             }
         }
     );
-    log_res(res);
+    handle_res(res);
 }
 
 pub fn mkfs(self: Self) !void {
@@ -85,7 +116,7 @@ pub fn mkfs(self: Self) !void {
             }
         }
     );
-    log_res(res);
+    handle_res(res);
 }
 
 pub fn copy_files(self: Self) !void {
@@ -97,7 +128,7 @@ pub fn copy_files(self: Self) !void {
             .argv = command,
         }
     );
-    log_res(res);
+    handle_res(res);
 }
 
 pub fn mount(self: Self) !void {
@@ -117,7 +148,7 @@ pub fn mount(self: Self) !void {
             }
         }
     );
-    log_res(res);
+    handle_res(res);
 }
 
 pub fn umount(self: Self) !void {
@@ -132,5 +163,5 @@ pub fn umount(self: Self) !void {
             }
         }
     );
-    log_res(res);
+    handle_res(res);
 }
