@@ -329,6 +329,75 @@ pub const EXT2 = struct {
         __reserved: [12]u8,
     };
 
+    pub const InodeTables = struct {
+        tables: []InodeTable,
+        filled: std.ArrayList(usize),
+        gpa: Allocator,
+        group_count: u32,
+        inodes_per_group: u32,
+
+        pub fn init(gpa: Allocator, group_count: u32, inodes_per_group: u32) !InodeTables {
+            const tables = try gpa.alloc(InodeTable, group_count);
+            errdefer gpa.free(tables);
+
+            const filled = try std.ArrayList(usize).initCapacity(gpa, group_count);
+            errdefer filled.deinit();
+
+            return .{
+                .tables = tables,
+                .filled = filled,
+                .gpa = gpa,
+                .group_count = group_count,
+                .inodes_per_group = inodes_per_group,
+            };
+        }
+
+        pub fn deinit(self: InodeTables) void {
+            for (self.filled.items) |filled_group_id| {
+                self.gpa.free(self.tables[filled_group_id]);
+            }
+            self.gpa.free(self.tables);
+            self.filled.deinit();
+        }
+
+        /// Passed in `table` must be owned.
+        pub fn fill_for_group(self: *InodeTables, group_id: usize, table: InodeTable) !void {
+            assert(group_id < self.tables.len);
+            // NOTE: we may want to update some table (UNLIKELY), if we do, then we must
+            // first remove the duplicate group_id from the list, or not insert a duplicate
+            // or use a HashSet instead of ArrayList
+            assert(!self.has_group_filled(group_id));
+
+            self.tables[group_id] = table;
+            try self.filled.append(group_id);
+        }
+
+        pub fn has_group_filled(self: InodeTables, group_id: usize) bool {
+            return std.mem.indexOfScalar(usize, self.filled.items, group_id) != null;
+        }
+
+        pub fn get_group_id_containing_inode_id(self: InodeTables, inode_id: u32) u32 {
+            var group_id_result: u32 = self.group_count;
+            for (0..self.group_count) |group_id| {
+                if (inode_id > group_id * self.inodes_per_group and inode_id < (group_id + 1) * self.inodes_per_group) {
+                    group_id_result = @intCast(group_id);
+                    break;
+                }
+            }
+            assert(group_id_result < self.group_count);
+            return group_id_result;
+        }
+
+        pub fn get_inode(self: InodeTables, inode_id: u32) Inode {
+            const group_id = self.get_group_id_containing_inode_id(inode_id);
+            // TODO: verify if -1 is correct. I think it is, because inode ids start from 1.
+            const inode_id_in_group = inode_id - group_id * self.inodes_per_group;
+            return self.tables[group_id][inode_id_in_group];
+        }
+    };
+
+    pub const InodeTable = []Inode;
+
     pub const Inode = set_fields_alignment_in_struct(_Inode, 1);
     const _Inode = extern struct {
         mode: u16,
@@ -367,24 +436,34 @@ pub const EXT2 = struct {
     reader: *Reader,
     superblock: *Superblock,
     bg_desc_table: BlockGroupDescriptorTable,
+    /// Should always be equal in len to bg_desc_table (one inode_table per group).
+    inode_tables: InodeTables,
     n_groups: u32,
     block_size: u32,
     is_sparse: bool,
 
     pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
         const superblock = try parse_superblock(gpa, reader);
+        errdefer gpa.destroy(superblock);
+
         if (superblock.magic != 0xef53) return error.NotEXT2;
 
         var self: Self = .{
             .gpa = gpa,
             .reader = reader,
             .superblock = superblock,
-            .bg_desc_table = undefined,
+            .bg_desc_table = &.{},
+            .inode_tables = undefined,
             .n_groups = superblock.n_groups(),
             .block_size = superblock.block_size(),
             .is_sparse = superblock.feature_ro_compat.EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER,
         };
+
         self.bg_desc_table = try parse_bg_desc_table(self);
+        errdefer gpa.free(self.bg_desc_table);
+
+        self.inode_tables = try InodeTables.init(gpa, @intCast(self.bg_desc_table.len), self.superblock.inodes_per_group);
+        errdefer self.inode_tables.deinit();
 
         return self;
     }
@@ -392,6 +471,7 @@ pub const EXT2 = struct {
     pub fn deinit(self: Self) void {
         self.gpa.destroy(self.superblock);
         self.gpa.free(self.bg_desc_table);
+        self.inode_tables.deinit();
     }
 
     pub fn get_size(self: Self) f64 {
@@ -480,6 +560,35 @@ pub const EXT2 = struct {
     fn get_used_blocks_in_group(self: Self, group_id: u32) u32 {
         assert(group_id < self.bg_desc_table.len);
         return self.superblock.blocks_per_group - self.bg_desc_table[group_id].free_blocks_count;
+    }
+
+    /// Caller owns the returned InodeTable and must free it.
+    fn get_inode_table(self: Self, group_id: u32) !InodeTable {
+        assert(group_id < self.bg_desc_table.len);
+        const i_table = try self.gpa.alloc(Inode, self.superblock.inodes_per_group);
+        errdefer self.gpa.free(i_table);
+        const dest = @as([*]u8, @ptrCast(i_table))[0..@sizeOf(Inode) * self.superblock.inodes_per_group];
+
+        const block_nr = self.bg_desc_table[group_id].inode_table;
+        const offset = block_nr * self.block_size;
+        try self.reader.seek_to(offset);
+
+        const read = try self.reader.read(dest);
+        assert(read == dest.len);
+
+        return i_table;
+    }
+
+    fn get_inode(self: *Self, inode_id: u32) !Inode {
+        const group_id = self.inode_tables.get_group_id_containing_inode_id(inode_id);
+        if (!self.inode_tables.has_group_filled(group_id)) {
+            const inode_table = try self.get_inode_table(group_id);
+            errdefer self.gpa.free(inode_table);
+
+            try self.inode_tables.fill_for_group(group_id, inode_table);
+        }
+
+        return self.inode_tables.get_inode(inode_id);
     }
 };
 
@@ -598,9 +707,49 @@ const Tests = struct {
     test "used blocks in group match" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
-        const ext2 = try EXT2.init(t_alloc, &reader);
+        const ext2: EXT2 = try .init(t_alloc, &reader);
         defer ext2.deinit();
 
         try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(ext2, 0));
+    }
+
+    test "get ROOT_INODE" {
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        var ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
+
+        const inode = try ext2.get_inode(EXT2.ROOT_INODE);
+        // TODO: add more expects
+        try t.expectEqual(0o40755, inode.mode);
+    }
+
+    // TODO: start here, work on tests
+    test "get inode_table" {}
+
+    fn walk_directories(self: *EXT2, inode_id: u32) !void {
+        const inode = try self.get_inode(inode_id);
+        tlog.debug("{any}", .{inode});
+    }
+
+    // const DirEntry = struct {};
+    //
+    // fn display_dir_entry(self: DirEntry) void {
+    // }
+
+    test "list files" {
+        t.log_level = .debug;
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        var ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
+
+        try walk_directories(&ext2, EXT2.ROOT_INODE);
+        for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
+            if (idx > 20) break;
+            tlog.debug("{o}", .{inode.mode});
+        }
+
+        if (t.log_level == .debug) unreachable;
     }
 };
