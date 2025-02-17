@@ -259,7 +259,7 @@ fn draw_fs_info(self: *const GUI) !void {
     if (self.fs_state.fs) |fs| {
         const fs_type = try std.fmt.allocPrintZ(self.frame_arena, "filesystem: {s}", .{fs.name()});
         r.DrawTextEx(font, fs_type, .{ .x = 10, .y = filename_y + 2 * text_line_h, }, 32, 2, r.WHITE);
-        const fs_size = try std.fmt.allocPrintZ(self.frame_arena, "size: {d} MB", .{fs.get_size() / 1e6});
+        const fs_size = try std.fmt.allocPrintZ(self.frame_arena, "size: {d} MB", .{fs.get_size() / std.math.pow(f64, 2, 20)});
         r.DrawTextEx(font, fs_size, .{ .x = 10, .y = filename_y + 3 * text_line_h, }, 32, 2, r.WHITE);
     } else {
         const txt = "This file doesn't match any implemented filesystem";
