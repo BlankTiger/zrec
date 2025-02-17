@@ -738,7 +738,6 @@ const Tests = struct {
     // }
 
     test "list files" {
-        t.log_level = .debug;
         var reader = try create_ext2_reader();
         defer reader.deinit();
         var ext2 = try EXT2.init(t_alloc, &reader);
@@ -749,7 +748,5 @@ const Tests = struct {
             if (idx > 20) break;
             tlog.debug("{o}", .{inode.mode});
         }
-
-        if (t.log_level == .debug) unreachable;
     }
 };
