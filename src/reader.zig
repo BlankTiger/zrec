@@ -50,7 +50,7 @@ pub const ReadReader = struct {
 // ) win.HANDLE;
 //
 // fn mmap(
-//     ptr: ?[*]align(std.mem.page_size) u8,
+//     ptr: ?[*]align(std.heap.pageSize()) u8,
 //     length: usize,
 //     prot: u32,
 //     flags: posix.system.MAP,
@@ -72,7 +72,7 @@ pub const ReadReader = struct {
 // }
 
 pub const MmapReader = struct {
-    pub const MemT = []align(std.mem.page_size) u8;
+    pub const MemT = []align(std.heap.pageSize()) u8;
 
     mem: MemT,
     mem_shared: bool = false,
