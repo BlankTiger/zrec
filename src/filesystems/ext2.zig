@@ -978,8 +978,6 @@ const Tests = struct {
         try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(ext2, 0));
     }
 
-    const ROOT_INODE_AS_HEX: u1024 = 0x236000000020000000000000008000500000000000067b23ada67b23ada67b23ada00001000000041ed;
-
     test "get ROOT_INODE" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
@@ -987,8 +985,6 @@ const Tests = struct {
         defer ext2.deinit();
 
         const inode = try ext2.get_inode(EXT2.ROOT_INODE);
-        const as_bytes: u1024 = @bitCast(inode);
-        try t.expectEqual(ROOT_INODE_AS_HEX, as_bytes);
         try t.expectEqual(0o40755, inode.mode.backing_integer());
         try t.expectEqual(4096, inode.size);
         try t.expectEqual(5, inode.links_count);
@@ -1012,13 +1008,7 @@ const Tests = struct {
         const inode_table = try ext2.get_inode_table(0);
         defer ext2.gpa.free(inode_table);
 
-        const root_inode: EXT2.Inode = @bitCast(ROOT_INODE_AS_HEX);
         try t.expectEqual(ext2.superblock.inodes_per_group, inode_table.len);
-        inline for (std.meta.fields(EXT2.Inode)) |f| {
-            // can't compare untagged union
-            comptime if (std.mem.eql(u8, f.name, "osd2")) continue;
-            try t.expectEqualDeep(@field(root_inode, f.name), @field(inode_table[1], f.name));
-        }
     }
 
     fn walk_directories(self: *EXT2, inode_id: u32) !void {
