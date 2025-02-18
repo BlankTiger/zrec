@@ -403,49 +403,48 @@ pub const EXT2 = struct {
     /// So an inode can be seen as a block of information related to an entity, describing its
     /// location on disk, its size and its owner.
     pub const Inode = extern struct {
-        /// Value used to indicate the format of the described file and the access rights.
-        mode: packed struct(u16) {
-            access_rights: packed struct {
+        const Mode = packed struct(u16) {
+            const AccessRights = packed struct {
                 /// Others execute.
-                EXT2_S_IXOTH: u1,
+                EXT2_S_IXOTH: u1 = 0,
                 /// Others write
-                EXT2_S_IWOTH: u1,
+                EXT2_S_IWOTH: u1 = 0,
                 /// Others read.
-                EXT2_S_IROTH: u1,
+                EXT2_S_IROTH: u1 = 0,
 
                 /// Group execute.
-                EXT2_S_IXGRP: u1,
+                EXT2_S_IXGRP: u1 = 0,
                 /// Group write.
-                EXT2_S_IWGRP: u1,
+                EXT2_S_IWGRP: u1 = 0,
                 /// Group read.
-                EXT2_S_IRGRP: u1,
+                EXT2_S_IRGRP: u1 = 0,
 
                 /// User execute.
-                EXT2_S_IXUSR: u1,
+                EXT2_S_IXUSR: u1 = 0,
                 /// User write.
-                EXT2_S_IWUSR: u1,
+                EXT2_S_IWUSR: u1 = 0,
                 /// User read.
-                EXT2_S_IRUSR: u1,
-            },
-            process_execution: packed struct {
+                EXT2_S_IRUSR: u1 = 0,
+            };
+
+            const ProcessExecution = packed struct {
                 /// Sticky bit.
-                EXT2_S_ISVTX: u1,
+                EXT2_S_ISVTX: u1 = 0,
                 /// Set process Group ID.
-                EXT2_S_ISGID: u1,
+                EXT2_S_ISGID: u1 = 0,
                 /// Set process User ID.
-                EXT2_S_ISUID: u1,
-            },
-            file_format: FileFormat,
+                EXT2_S_ISUID: u1 = 0,
+            };
 
             const FileFormat = packed struct {
                 /// FIFO.
-                EXT2_S_IFIFO: u1,
+                EXT2_S_IFIFO: u1 = 0,
                 /// Character device.
-                EXT2_S_IFCHR: u1,
+                EXT2_S_IFCHR: u1 = 0,
                 /// Directory.
-                EXT2_S_IFDIR: u1,
+                EXT2_S_IFDIR: u1 = 0,
                 /// Regular file.
-                EXT2_S_IFREG: u1,
+                EXT2_S_IFREG: u1 = 0,
             };
 
             /// Block device.
@@ -456,8 +455,25 @@ pub const EXT2 = struct {
 
             /// Socket.
             pub const EXT2_S_IFSOCK: FileFormat = .{ .EXT2_S_IFREG = 1, .EXT2_S_IFDIR = 1 };
-        } align(1),
+
+            pub fn backing_integer(self: Mode) @typeInfo(Mode).@"struct".backing_integer.? {
+                return @bitCast(self);
+            }
+
+            access_rights: AccessRights,
+            process_execution: ProcessExecution,
+            file_format: FileFormat,
+        };
+
+        /// Value used to indicate the format of the described file and the access rights.
+        mode: Mode align(1),
+
+        /// User id associated with the file.
         uid: u16 align(1),
+
+        /// In revision 0, (signed) 32bit value indicating the size of the file in bytes. In
+        /// revision 1 and later revisions, and only for regular files, this represents the lower
+        /// 32-bit of the file size; the upper 32-bit is located in the i_dir_acl.
         size: u32 align(1),
         atime: u32 align(1),
         ctime: u32 align(1),
@@ -776,9 +792,7 @@ const Tests = struct {
         defer ext2.deinit();
 
         const inode = try ext2.get_inode(EXT2.ROOT_INODE);
-        // TODO: add more expects
-        lib.print(inode, null);
-        // try t.expectEqual(0o40755, inode.mode);
+        try t.expectEqual(0o40755, inode.mode.backing_integer());
     }
 
     // TODO: start here, work on tests
@@ -803,7 +817,7 @@ const Tests = struct {
         try walk_directories(&ext2, EXT2.ROOT_INODE);
         for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
             if (idx > 20) break;
-            tlog.debug("{o}", .{inode.mode});
+            tlog.warn("{o}", .{inode.mode.backing_integer()});
         }
     }
 };
