@@ -679,6 +679,10 @@ pub const EXT2 = struct {
 
         /// 96bit OS dependant structure.
         osd2: OSD2,
+
+        pub fn is_dir(self: Inode) bool {
+            return self.mode.file_format == Mode.FileFormat{ .EXT2_S_IFDIR = 1 };
+        }
     };
 
     pub const Error =
@@ -1011,27 +1015,29 @@ const Tests = struct {
         try t.expectEqual(ext2.superblock.inodes_per_group, inode_table.len);
     }
 
-    fn walk_directories(self: *EXT2, inode_id: u32) !void {
-        const inode = try self.get_inode(inode_id);
-        tlog.debug("{any}", .{inode});
+    fn walk_directories(self: *EXT2, dir_inode_id: u32) !void {
+        const inode = try self.get_inode(dir_inode_id);
+        assert(inode.is_dir());
+        // TODO: start here, read blocks, create DirEntry's and recursively go into directories
     }
 
-    // const DirEntry = struct {};
-    //
+    const DirEntry = struct {};
+
     // fn display_dir_entry(self: DirEntry) void {
     // }
 
-    // test "list files" {
-    //     var reader = try create_ext2_reader();
-    //     defer reader.deinit();
-    //     var ext2 = try EXT2.init(t_alloc, &reader);
-    //     defer ext2.deinit();
-    //
-    //     try walk_directories(&ext2, EXT2.ROOT_INODE);
-    //     for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
-    //         if (idx > 2) break;
-    //         lib.print(inode, null);
-    //         std.debug.print("\n", .{});
-    //     }
-    // }
+    test "RUN list files" {
+        var reader = try create_ext2_reader();
+        defer reader.deinit();
+        var ext2 = try EXT2.init(t_alloc, &reader);
+        defer ext2.deinit();
+
+        try walk_directories(&ext2, EXT2.ROOT_INODE);
+        for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
+            if (idx > 2) break;
+            _ = inode;
+            // lib.print(inode);
+            std.debug.print("\n", .{});
+        }
+    }
 };

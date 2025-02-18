@@ -11,7 +11,11 @@ pub const Opts = struct {
 
 const buf_size = 3000;
 
-pub fn print(x: anytype, options: ?*Opts) void {
+pub fn print(x: anytype) void {
+    print_with_opts(x, null);
+}
+
+pub fn print_with_opts(x: anytype, options: ?*Opts) void {
     std.debug.lockStdErr();
     defer std.debug.unlockStdErr();
     print_with_writer(std.io.getStdErr().writer(), x, options);
