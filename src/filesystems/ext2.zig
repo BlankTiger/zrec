@@ -377,21 +377,15 @@ pub const EXT2 = struct {
         }
 
         pub fn get_group_id_containing_inode_id(self: InodeTables, inode_id: u32) u32 {
-            var group_id_result: u32 = self.group_count;
-            for (0..self.group_count) |group_id| {
-                if (inode_id > group_id * self.inodes_per_group and inode_id < (group_id + 1) * self.inodes_per_group) {
-                    group_id_result = @intCast(group_id);
-                    break;
-                }
-            }
-            assert(group_id_result < self.group_count);
-            return group_id_result;
+            const group_id = (inode_id - 1) / self.inodes_per_group;
+            assert(group_id < self.group_count);
+            return group_id;
         }
 
         pub fn get_inode(self: InodeTables, inode_id: u32) Inode {
             const group_id = self.get_group_id_containing_inode_id(inode_id);
             // TODO: verify if -1 is correct. I think it is, because inode ids start from 1.
-            const inode_id_in_group = inode_id - group_id * self.inodes_per_group;
+            const inode_id_in_group = (inode_id - 1) % self.inodes_per_group;
             return self.tables[group_id][inode_id_in_group];
         }
     };
@@ -465,6 +459,109 @@ pub const EXT2 = struct {
             file_format: FileFormat,
         };
 
+        const Flags = packed struct(u32) {
+            const Compression = packed struct {
+                /// Dirty (modified).
+                EXT2_DIRTY_FL: u1,
+                /// Compressed blocks.
+                EXT2_COMPRBLK_FL: u1,
+                /// Access raw compressed data.
+                EXT2_NOCOMPR_FL: u1,
+                /// Compression error.
+                EXT2_ECOMPR_FL: u1,
+            };
+
+            /// Secure deletion.
+            EXT2_SECRM_FL: u1,
+            /// Record for undelete.
+            EXT2_UNRM_FL: u1,
+            /// Compressed file.
+            EXT2_COMPR_FL: u1,
+            /// Synchronous updates.
+            EXT2_SYNC_FL: u1,
+            /// Immutable file.
+            EXT2_IMMUTABLE_FL: u1,
+            /// Append only.
+            EXT2_APPEND_FL: u1,
+            /// do not dump/Delete file.
+            EXT2_NODUMP_FL: u1,
+            /// Do not update .i_atime.
+            EXT2_NOATIME_FL: u1,
+
+            /// Reserved for compression usage.
+            compression: Compression,
+
+            /// B-tree format directory.
+            EXT2_BTREE_FL: u1,
+            /// Hash indexed directory.
+            EXT2_INDEX_FL: u1,
+            /// AFS directory.
+            EXT2_IMAGIC_FL: u1,
+            /// Journal file data.
+            EXT3_JOURNAL_DATA_FL: u1,
+
+            __unused: u15,
+
+            /// Reserved for ext2 library.
+            EXT2_RESERVED_FL: u1,
+        };
+
+        const OSD2 = extern union {
+            hurd: extern struct {
+                /// Fragment number. Always 0 GNU HURD since fragments are not supported. Obsolete
+                /// with Ext4.
+                frag: u8,
+                /// Fragment size. Always 0 in GNU HURD since fragments are not supported. Obsolete
+                /// with Ext4.
+                fsize: u8,
+                /// High 16bit of the 32bit mode.
+                mode_high: u16,
+                /// High 16bit of user id.
+                uid_high: u16,
+                /// High 16bit of group id.
+                gid_high: u16,
+                /// User id of the assigned file author. If this value is set to -1, the POSIX user
+                /// id will be used.
+                author: i32,
+            } align(1),
+
+            linux: extern struct {
+                /// Fragment number.
+                ///
+                /// Always 0 in Linux since fragments are not supported.
+                ///
+                /// Important:
+                /// A new implementation of Ext2 should completely disregard this field if the
+                /// i_faddr value is 0; in Ext4 this field is combined with l_i_fsize to become the
+                /// high 16bit of the 48bit blocks count for the inode data.
+                frag: u8,
+                /// Fragment size.
+                ///
+                /// Always 0 in Linux since fragments are not supported. Important
+                ///
+                /// A new implementation of Ext2 should completely disregard this field if the
+                /// i_faddr value is 0; in Ext4 this field is combined with l_i_frag to become the
+                /// high 16bit of the 48bit blocks count for the inode data.
+                fsize: u8,
+                __reserved: u16,
+                /// High 16bit of user id.
+                uid_high: u16,
+                /// High 16bit of group id.
+                gid_high: u16,
+                __reserved2: u32,
+            } align(1),
+
+            masix: extern struct {
+                /// Fragment number. Always 0 in Masix as framgents are not supported. Obsolete with
+                /// Ext4.
+                frag: u8,
+                /// Fragment size. Always 0 in Masix as fragments are not supported. Obsolete with
+                /// Ext4.
+                fsize: u8,
+                __reserved: [10]u8,
+            } align(1),
+        };
+
         /// Value used to indicate the format of the described file and the access rights.
         mode: Mode align(1),
 
@@ -475,21 +572,103 @@ pub const EXT2 = struct {
         /// revision 1 and later revisions, and only for regular files, this represents the lower
         /// 32-bit of the file size; the upper 32-bit is located in the i_dir_acl.
         size: u32 align(1),
+
+        /// Value representing the number of seconds since january 1st 1970 of the last time this
+        /// inode was accessed.
         atime: u32 align(1),
+
+        /// Value representing the number of seconds since january 1st 1970, of when the inode was
+        /// created.
         ctime: u32 align(1),
+
+        /// Value representing the number of seconds since january 1st 1970, of the last time this
+        /// inode was modified.
         mtime: u32 align(1),
+
+        /// Value representing the number of seconds since january 1st 1970, of when the inode was
+        /// deleted.
         dtime: u32 align(1),
+
+        /// Value of the POSIX group having access to this file.
         gid: u16 align(1),
+
+        /// Value indicating how many times this particular inode is linked (referred to). Most
+        /// files will have a link count of 1. Files with hard links pointing to them will have an
+        /// additional count for each hard link.
+        ///
+        /// Symbolic links do not affect the link count of an inode. When the link count reaches 0
+        /// the inode and all its associated blocks are freed.
         links_count: u16 align(1),
+
+        /// Value representing the total number of 512-bytes blocks reserved to contain the data of
+        /// this inode, regardless if these blocks are used or not. The block numbers of these
+        /// reserved blocks are contained in the i_block array.
+        ///
+        /// Since this value represents 512-byte blocks and not file system blocks, this value
+        /// should not be directly used as an index to the i_block array. Rather, the maximum index
+        /// of the i_block array should be computed from i_blocks / ((1024<<s_log_block_size)/512),
+        /// or once simplified, i_blocks/(2<<s_log_block_size).
         blocks: u32 align(1),
-        flags: u32 align(1),
+
+        /// Value indicating how the ext2 implementation should behave when accessing the data for
+        /// this inode.
+        flags: Flags align(1),
+
+        /// OS dependent value.
+        ///
+        /// Hurd: 32bit value labeled as 'translator'.
+        /// Linux: 32bit value currently reserved.
+        /// Masix: 32bit value currently reserved.
         osd1: u32 align(1),
+
+        ///  15 x 32bit block numbers pointing to the blocks containing the data for this inode. The
+        ///  first 12 blocks are direct blocks. The 13th entry in this array is the block number of
+        ///  the first indirect block; which is a block containing an array of block ID containing
+        ///  the data. Therefore, the 13th block of the file will be the first block ID contained in
+        ///  the indirect block. With a 1KiB block size, blocks 13 to 268 of the file data are
+        ///  contained in this indirect block.
+        ///
+        /// The 14th entry in this array is the block number of the first doubly-indirect block;
+        /// which is a block containing an array of indirect block IDs, with each of those indirect
+        /// blocks containing an array of blocks containing the data. In a 1KiB block size, there
+        /// would be 256 indirect blocks per doubly-indirect block, with 256 direct blocks per
+        /// indirect block for a total of 65536 blocks per doubly-indirect block.
+        ///
+        /// The 15th entry in this array is the block number of the triply-indirect block; which is
+        /// a block containing an array of doubly-indrect block IDs, with each of those
+        /// doubly-indrect block containing an array of indrect block, and each of those indirect
+        /// block containing an array of direct block. In a 1KiB file system, this would be a total
+        /// of 16777216 blocks per triply-indirect block.
+        ///
+        /// In the original implementation of Ext2, a value of 0 in this array effectively
+        /// terminated it with no further block defined. In sparse files, it is possible to have
+        /// some blocks allocated and some others not yet allocated with the value 0 being used to
+        /// indicate which blocks are not yet allocated for this file.
         block: [15]u32 align(1),
+
+        /// Value used to indicate the file version (used by NFS).
         generation: u32 align(1),
+
+        /// Value indicating the block number containing the extended attributes. In revision 0 this
+        /// value is always 0.
         file_acl: u32 align(1),
+
+        /// In revision 0 this 32bit value is always 0. In revision 1, for regular files this 32bit
+        /// value contains the high 32 bits of the 64bit file size.
+        ///
+        /// Linux sets this value to 0 if the file is not a regular file (i.e. block devices,
+        /// directories, etc). In theory, this value could be set to point to a block containing
+        /// extended attributes of the directory or special file.
         dir_acl: u32 align(1),
+
+        /// Value indicating the location of the file fragment.
+        ///
+        /// In Linux and GNU HURD, since fragments are unsupported this value is always 0. In Ext4
+        /// this value is now marked as obsolete.
         faddr: u32 align(1),
-        osd2: [12]u8 align(1),
+
+        /// 96bit OS dependant structure.
+        osd2: OSD2 align(1),
     };
 
     pub const Error =
@@ -639,14 +818,18 @@ pub const EXT2 = struct {
         assert(group_id < self.bg_desc_table.len);
         const i_table = try self.gpa.alloc(Inode, self.superblock.inodes_per_group);
         errdefer self.gpa.free(i_table);
-        const dest = @as([*]u8, @ptrCast(i_table))[0..@sizeOf(Inode) * self.superblock.inodes_per_group];
 
-        const block_nr = self.bg_desc_table[group_id].inode_table;
-        const offset = block_nr * self.block_size;
+        const offset = (self.bg_desc_table[group_id].inode_table % self.superblock.blocks_per_group) * self.block_size;
         try self.reader.seek_to(offset);
 
-        const read = try self.reader.read(dest);
-        assert(read == dest.len);
+        // TODO: maybe this can be somehow optimized, or maybe we shouldn't do this at all and
+        // instead parse each Inode on demand.
+        for (0..self.superblock.inodes_per_group) |inode_id| {
+            const dest = std.mem.asBytes(&i_table[inode_id]);
+            const read = try self.reader.read(dest);
+            assert(read == dest.len);
+            try self.reader.seek_by(self.superblock.inode_size - @as(u16, @intCast(read)));
+        }
 
         return i_table;
     }
@@ -808,16 +991,17 @@ const Tests = struct {
     // fn display_dir_entry(self: DirEntry) void {
     // }
 
-    test "list files" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2 = try EXT2.init(t_alloc, &reader);
-        defer ext2.deinit();
-
-        try walk_directories(&ext2, EXT2.ROOT_INODE);
-        for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
-            if (idx > 20) break;
-            tlog.warn("{o}", .{inode.mode.backing_integer()});
-        }
-    }
+    // test "list files" {
+    //     var reader = try create_ext2_reader();
+    //     defer reader.deinit();
+    //     var ext2 = try EXT2.init(t_alloc, &reader);
+    //     defer ext2.deinit();
+    //
+    //     try walk_directories(&ext2, EXT2.ROOT_INODE);
+    //     for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
+    //         if (idx > 2) break;
+    //         lib.print(inode, null);
+    //         std.debug.print("\n", .{});
+    //     }
+    // }
 };
