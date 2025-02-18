@@ -504,6 +504,10 @@ pub const EXT2 = struct {
 
             /// Reserved for ext2 library.
             EXT2_RESERVED_FL: u1,
+
+            pub fn backing_integer(self: Flags) @typeInfo(Flags).@"struct".backing_integer.? {
+                return @bitCast(self);
+            }
         };
 
         const OSD2 = extern union {
@@ -523,7 +527,7 @@ pub const EXT2 = struct {
                 /// User id of the assigned file author. If this value is set to -1, the POSIX user
                 /// id will be used.
                 author: i32,
-            } align(1),
+            },
 
             linux: extern struct {
                 /// Fragment number.
@@ -549,7 +553,7 @@ pub const EXT2 = struct {
                 /// High 16bit of group id.
                 gid_high: u16,
                 __reserved2: u32,
-            } align(1),
+            },
 
             masix: extern struct {
                 /// Fragment number. Always 0 in Masix as framgents are not supported. Obsolete with
@@ -559,38 +563,44 @@ pub const EXT2 = struct {
                 /// Ext4.
                 fsize: u8,
                 __reserved: [10]u8,
-            } align(1),
+            },
+
+            pub fn backing_integer(self: OSD2) @Type(.{
+                .int = .{ .signedness = .unsigned, .bits = @bitSizeOf(OSD2) }
+            }) {
+                return @bitCast(self);
+            }
         };
 
         /// Value used to indicate the format of the described file and the access rights.
-        mode: Mode align(1),
+        mode: Mode,
 
         /// User id associated with the file.
-        uid: u16 align(1),
+        uid: u16,
 
         /// In revision 0, (signed) 32bit value indicating the size of the file in bytes. In
         /// revision 1 and later revisions, and only for regular files, this represents the lower
         /// 32-bit of the file size; the upper 32-bit is located in the i_dir_acl.
-        size: u32 align(1),
+        size: u32,
 
         /// Value representing the number of seconds since january 1st 1970 of the last time this
         /// inode was accessed.
-        atime: u32 align(1),
+        atime: u32,
 
         /// Value representing the number of seconds since january 1st 1970, of when the inode was
         /// created.
-        ctime: u32 align(1),
+        ctime: u32,
 
         /// Value representing the number of seconds since january 1st 1970, of the last time this
         /// inode was modified.
-        mtime: u32 align(1),
+        mtime: u32,
 
         /// Value representing the number of seconds since january 1st 1970, of when the inode was
         /// deleted.
-        dtime: u32 align(1),
+        dtime: u32,
 
         /// Value of the POSIX group having access to this file.
-        gid: u16 align(1),
+        gid: u16,
 
         /// Value indicating how many times this particular inode is linked (referred to). Most
         /// files will have a link count of 1. Files with hard links pointing to them will have an
@@ -598,7 +608,7 @@ pub const EXT2 = struct {
         ///
         /// Symbolic links do not affect the link count of an inode. When the link count reaches 0
         /// the inode and all its associated blocks are freed.
-        links_count: u16 align(1),
+        links_count: u16,
 
         /// Value representing the total number of 512-bytes blocks reserved to contain the data of
         /// this inode, regardless if these blocks are used or not. The block numbers of these
@@ -608,18 +618,18 @@ pub const EXT2 = struct {
         /// should not be directly used as an index to the i_block array. Rather, the maximum index
         /// of the i_block array should be computed from i_blocks / ((1024<<s_log_block_size)/512),
         /// or once simplified, i_blocks/(2<<s_log_block_size).
-        blocks: u32 align(1),
+        blocks: u32,
 
         /// Value indicating how the ext2 implementation should behave when accessing the data for
         /// this inode.
-        flags: Flags align(1),
+        flags: Flags,
 
         /// OS dependent value.
         ///
         /// Hurd: 32bit value labeled as 'translator'.
         /// Linux: 32bit value currently reserved.
         /// Masix: 32bit value currently reserved.
-        osd1: u32 align(1),
+        osd1: u32,
 
         ///  15 x 32bit block numbers pointing to the blocks containing the data for this inode. The
         ///  first 12 blocks are direct blocks. The 13th entry in this array is the block number of
@@ -644,14 +654,14 @@ pub const EXT2 = struct {
         /// terminated it with no further block defined. In sparse files, it is possible to have
         /// some blocks allocated and some others not yet allocated with the value 0 being used to
         /// indicate which blocks are not yet allocated for this file.
-        block: [15]u32 align(1),
+        block: [15]u32,
 
         /// Value used to indicate the file version (used by NFS).
-        generation: u32 align(1),
+        generation: u32,
 
         /// Value indicating the block number containing the extended attributes. In revision 0 this
         /// value is always 0.
-        file_acl: u32 align(1),
+        file_acl: u32,
 
         /// In revision 0 this 32bit value is always 0. In revision 1, for regular files this 32bit
         /// value contains the high 32 bits of the 64bit file size.
@@ -659,16 +669,16 @@ pub const EXT2 = struct {
         /// Linux sets this value to 0 if the file is not a regular file (i.e. block devices,
         /// directories, etc). In theory, this value could be set to point to a block containing
         /// extended attributes of the directory or special file.
-        dir_acl: u32 align(1),
+        dir_acl: u32,
 
         /// Value indicating the location of the file fragment.
         ///
         /// In Linux and GNU HURD, since fragments are unsupported this value is always 0. In Ext4
         /// this value is now marked as obsolete.
-        faddr: u32 align(1),
+        faddr: u32,
 
         /// 96bit OS dependant structure.
-        osd2: OSD2 align(1),
+        osd2: OSD2,
     };
 
     pub const Error =
@@ -968,14 +978,26 @@ const Tests = struct {
         try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(ext2, 0));
     }
 
-    test "RUN get ROOT_INODE" {
+    test "get ROOT_INODE" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
         var ext2 = try EXT2.init(t_alloc, &reader);
         defer ext2.deinit();
 
         const inode = try ext2.get_inode(EXT2.ROOT_INODE);
+        lib.print(inode, null);
         try t.expectEqual(0o40755, inode.mode.backing_integer());
+        try t.expectEqual(4096, inode.size);
+        try t.expectEqual(5, inode.links_count);
+        try t.expectEqual(8, inode.blocks);
+        try t.expectEqual(0, inode.flags.backing_integer());
+        try t.expectEqual(2, inode.osd1);
+        try t.expectEqualSlices(u32, &[_]u32{ 566 } ++ &[_]u32{ 0 } ** 14, &inode.block);
+        try t.expectEqual(0, inode.generation);
+        try t.expectEqual(0, inode.file_acl);
+        try t.expectEqual(0, inode.dir_acl);
+        try t.expectEqual(0, inode.faddr);
+        try t.expectEqual(0, inode.osd2.backing_integer());
     }
 
     // TODO: start here, work on tests
