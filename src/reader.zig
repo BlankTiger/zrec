@@ -121,6 +121,25 @@ pub const MmapReader = struct {
         return dest.len;
     }
 
+    pub fn read_u32(self: *Self) u32 {
+        const idx = self.idx;
+        const bytes: [4]u8 = .{ self.mem[idx], self.mem[idx+1], self.mem[idx+2], self.mem[idx+3] };
+        self.idx += 4;
+        return std.mem.readInt(u32, &bytes, .little);
+    }
+
+    pub fn read_u16(self: *Self) u16 {
+        const idx = self.idx;
+        const bytes: [2]u8 = .{ self.mem[idx], self.mem[idx+1] };
+        self.idx += 2;
+        return std.mem.readInt(u16, &bytes, .little);
+    }
+
+    pub fn read_u8(self: *Self) u8 {
+        self.idx += 1;
+        return self.mem[self.idx-1];
+    }
+
     pub fn seek_by(self: *Self, offset: i64) !void {
         const _idx: i64 = @intCast(self.idx);
         if (_idx + offset < 0) self.idx = 0;

@@ -685,6 +685,91 @@ pub const EXT2 = struct {
         }
     };
 
+    const DirEntry = struct {
+        const FileType = enum(u8) {
+            /// Unknown file type.
+            EXT2_FT_UNKNOWN  = 0,
+            /// Regular file.
+            EXT2_FT_REG_FILE = 1,
+            /// Directory file.
+            EXT2_FT_DIR      = 2,
+            /// Character device.
+            EXT2_FT_CHRDEV   = 3,
+            /// Block device.
+            EXT2_FT_BLKDEV   = 4,
+            /// Buffer file.
+            EXT2_FT_FIFO     = 5,
+            /// Socket file.
+            EXT2_FT_SOCK     = 6,
+            /// Symbolic link.
+            EXT2_FT_SYMLINK  = 7,
+        };
+
+        /// Inode number of the file entry. A value of 0 indicate that the entry is not used.
+        inode_id: u32,
+
+        /// Displacement to the next directory entry from the start of the current directory entry.
+        /// This field must have a value at least equal to the length of the current record.
+        ///
+        /// The directory entries must be aligned on 4 bytes boundaries and there cannot be any
+        /// directory entry spanning multiple data blocks. If an entry cannot completely fit in one
+        /// block, it must be pushed to the next data block and the rec_len of the previous entry
+        /// properly adjusted.
+        ///
+        /// Since this value cannot be negative, when a file is removed the previous record within
+        /// the block has to be modified to point to the next valid record within the block or to
+        /// the end of the block when no other directory entry is present.
+        ///
+        /// If the first entry within the block is removed, a blank record will be created and point
+        /// to the next directory entry or to the end of the block.
+        rec_len: u16,
+
+        /// Value indicating how many bytes of character data are contained in the name.
+        ///
+        /// This value must never be larger than rec_len - 8. If the directory entry name is updated
+        /// and cannot fit in the existing directory entry, the entry may have to be relocated in a
+        /// new directory entry of sufficient size and possibly stored in a new data block.
+        name_len: u8,
+
+        /// In revision 0, this field was the upper 8-bit of the then 16-bit name_len. Since all
+        /// implementations still limited the file names to 255 characters this 8-bit value was
+        /// always 0.
+        ///
+        /// This value must match the inode type defined in the related inode entry.
+        file_type: FileType,
+
+        name: []u8,
+
+        gpa: Allocator,
+
+        pub fn init(gpa: Allocator, reader: *Reader) !DirEntry {
+            // NOTE: ASSUMES THIS IS NOT REV 0!
+            const inode_id = reader.read_u32();
+            const rec_len = reader.read_u16();
+            const name_len = reader.read_u8();
+            const file_type: FileType = @enumFromInt(reader.read_u8());
+            const name = try gpa.alloc(u8, name_len);
+            const read = try reader.read(name);
+            assert(read == name.len);
+
+            const aligned = std.mem.alignForward(usize, reader.idx, 4) - reader.idx;
+            try reader.seek_by(@intCast(aligned));
+
+            return .{
+                .gpa = gpa,
+                .inode_id = inode_id,
+                .rec_len = rec_len,
+                .name_len = name_len,
+                .file_type = file_type,
+                .name = name,
+            };
+        }
+
+        pub fn deinit(self: DirEntry) void {
+            self.gpa.free(self.name);
+        }
+    };
+
     pub const Error =
         Allocator.Error
         || std.fs.File.ReadError
@@ -793,6 +878,10 @@ pub const EXT2 = struct {
         return self.block_size * group_idx * self.superblock.blocks_per_group;
     }
 
+    fn block_offset(self: Self, block_id: u32) usize {
+        return self.block_size * block_id;
+    }
+
     fn is_backup_block_group(self: Self, block_group_idx: usize) bool {
         if (!self.is_sparse) return true;
         if (block_group_idx == 1) return true;
@@ -858,6 +947,24 @@ pub const EXT2 = struct {
         }
 
         return self.inode_tables.get_inode(inode_id);
+    }
+
+    /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
+    fn read_dir_entries(self: *Self, dir_inode: Inode) ![]DirEntry {
+        assert(dir_inode.is_dir());
+        var entries = std.ArrayList(DirEntry).init(self.gpa);
+        errdefer entries.deinit();
+
+        for (dir_inode.block) |blk| {
+            if (blk == 0) continue;
+            const offset = self.block_offset(blk);
+            try self.reader.seek_to(offset);
+            const entry = try DirEntry.init(self.gpa, self.reader);
+            errdefer entry.deinit();
+            try entries.append(entry);
+        }
+
+        return entries.toOwnedSlice();
     }
 };
 
@@ -1015,81 +1122,33 @@ const Tests = struct {
         try t.expectEqual(ext2.superblock.inodes_per_group, inode_table.len);
     }
 
-    fn walk_directories(self: *EXT2, dir_inode_id: u32) !void {
+    fn walk_directories(self: *EXT2, dir_inode_id: u32) ![]EXT2.DirEntry {
         const inode = try self.get_inode(dir_inode_id);
         assert(inode.is_dir());
 
-        // TODO: start here, read blocks, create DirEntry's and recursively go into directories
+        const entries = try self.read_dir_entries(inode);
+        // TODO: ewww
+        errdefer {
+            for (entries) |e| e.deinit();
+            self.gpa.free(entries);
+        }
+        return entries;
     }
 
-    const DirEntry = struct {
-        /// Inode number of the file entry. A value of 0 indicate that the entry is not used.
-        inode_id: u32,
-
-        /// Displacement to the next directory entry from the start of the current directory entry.
-        /// This field must have a value at least equal to the length of the current record.
-        ///
-        /// The directory entries must be aligned on 4 bytes boundaries and there cannot be any
-        /// directory entry spanning multiple data blocks. If an entry cannot completely fit in one
-        /// block, it must be pushed to the next data block and the rec_len of the previous entry
-        /// properly adjusted.
-        ///
-        /// Since this value cannot be negative, when a file is removed the previous record within
-        /// the block has to be modified to point to the next valid record within the block or to
-        /// the end of the block when no other directory entry is present.
-        ///
-        /// If the first entry within the block is removed, a blank record will be created and point
-        /// to the next directory entry or to the end of the block.
-        rec_len: u16,
-
-        /// Value indicating how many bytes of character data are contained in the name.
-        ///
-        /// This value must never be larger than rec_len - 8. If the directory entry name is updated
-        /// and cannot fit in the existing directory entry, the entry may have to be relocated in a
-        /// new directory entry of sufficient size and possibly stored in a new data block.
-        name_len: u8,
-
-        /// In revision 0, this field was the upper 8-bit of the then 16-bit name_len. Since all
-        /// implementations still limited the file names to 255 characters this 8-bit value was
-        /// always 0.
-        ///
-        /// This value must match the inode type defined in the related inode entry.
-        file_type: enum(u8) {
-            /// Unknown file type.
-            EXT2_FT_UNKNOWN  = 0,
-            /// Regular file.
-            EXT2_FT_REG_FILE = 1,
-            /// Directory file.
-            EXT2_FT_DIR      = 2,
-            /// Character device.
-            EXT2_FT_CHRDEV   = 3,
-            /// Block device.
-            EXT2_FT_BLKDEV   = 4,
-            /// Buffer file.
-            EXT2_FT_FIFO     = 5,
-            /// Socket file.
-            EXT2_FT_SOCK     = 6,
-            /// Symbolic link.
-            EXT2_FT_SYMLINK  = 7,
-        },
-        name: []u8,
-    };
-
-    // fn display_dir_entry(self: DirEntry) void {
-    // }
-
-    test "RUN list files" {
+    test "RUN read root dir" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
         var ext2 = try EXT2.init(t_alloc, &reader);
         defer ext2.deinit();
 
-        try walk_directories(&ext2, EXT2.ROOT_INODE);
-        for (ext2.inode_tables.tables[0], 0..) |inode, idx| {
-            if (idx > 2) break;
-            _ = inode;
-            // lib.print(inode);
-            std.debug.print("\n", .{});
+        const entries = try walk_directories(&ext2, EXT2.ROOT_INODE);
+        try t.expectEqual(1, entries.len);
+        try t.expectEqualSlices(u8, ".", entries[0].name);
+        defer {
+            for (entries) |e| e.deinit();
+            ext2.gpa.free(entries);
         }
     }
+
+    test "RUN list files" {}
 };
