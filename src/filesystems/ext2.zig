@@ -1018,10 +1018,62 @@ const Tests = struct {
     fn walk_directories(self: *EXT2, dir_inode_id: u32) !void {
         const inode = try self.get_inode(dir_inode_id);
         assert(inode.is_dir());
+
         // TODO: start here, read blocks, create DirEntry's and recursively go into directories
     }
 
-    const DirEntry = struct {};
+    const DirEntry = struct {
+        /// Inode number of the file entry. A value of 0 indicate that the entry is not used.
+        inode_id: u32,
+
+        /// Displacement to the next directory entry from the start of the current directory entry.
+        /// This field must have a value at least equal to the length of the current record.
+        ///
+        /// The directory entries must be aligned on 4 bytes boundaries and there cannot be any
+        /// directory entry spanning multiple data blocks. If an entry cannot completely fit in one
+        /// block, it must be pushed to the next data block and the rec_len of the previous entry
+        /// properly adjusted.
+        ///
+        /// Since this value cannot be negative, when a file is removed the previous record within
+        /// the block has to be modified to point to the next valid record within the block or to
+        /// the end of the block when no other directory entry is present.
+        ///
+        /// If the first entry within the block is removed, a blank record will be created and point
+        /// to the next directory entry or to the end of the block.
+        rec_len: u16,
+
+        /// Value indicating how many bytes of character data are contained in the name.
+        ///
+        /// This value must never be larger than rec_len - 8. If the directory entry name is updated
+        /// and cannot fit in the existing directory entry, the entry may have to be relocated in a
+        /// new directory entry of sufficient size and possibly stored in a new data block.
+        name_len: u8,
+
+        /// In revision 0, this field was the upper 8-bit of the then 16-bit name_len. Since all
+        /// implementations still limited the file names to 255 characters this 8-bit value was
+        /// always 0.
+        ///
+        /// This value must match the inode type defined in the related inode entry.
+        file_type: enum(u8) {
+            /// Unknown file type.
+            EXT2_FT_UNKNOWN  = 0,
+            /// Regular file.
+            EXT2_FT_REG_FILE = 1,
+            /// Directory file.
+            EXT2_FT_DIR      = 2,
+            /// Character device.
+            EXT2_FT_CHRDEV   = 3,
+            /// Block device.
+            EXT2_FT_BLKDEV   = 4,
+            /// Buffer file.
+            EXT2_FT_FIFO     = 5,
+            /// Socket file.
+            EXT2_FT_SOCK     = 6,
+            /// Symbolic link.
+            EXT2_FT_SYMLINK  = 7,
+        },
+        name: []u8,
+    };
 
     // fn display_dir_entry(self: DirEntry) void {
     // }
