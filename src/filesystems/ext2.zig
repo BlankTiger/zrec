@@ -740,8 +740,6 @@ pub const EXT2 = struct {
 
         name: []u8,
 
-        gpa: Allocator,
-
         pub fn init(gpa: Allocator, reader: *Reader) !DirEntry {
             // NOTE: ASSUMES THIS IS NOT REV 0!
             const inode_id = reader.read_u32();
@@ -756,7 +754,6 @@ pub const EXT2 = struct {
             try reader.seek_by(@intCast(aligned));
 
             return .{
-                .gpa = gpa,
                 .inode_id = inode_id,
                 .rec_len = rec_len,
                 .name_len = name_len,
@@ -765,8 +762,15 @@ pub const EXT2 = struct {
             };
         }
 
-        pub fn deinit(self: DirEntry) void {
-            self.gpa.free(self.name);
+        pub fn deinit(self: DirEntry, gpa: Allocator) void {
+            gpa.free(self.name);
+        }
+
+        pub fn free_entries(gpa: Allocator, entries: []DirEntry) void {
+            if (entries.len > 0) {
+                for (entries) |e| e.deinit(gpa);
+            }
+            gpa.free(entries);
         }
     };
 
@@ -950,18 +954,32 @@ pub const EXT2 = struct {
     }
 
     /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
-    fn read_dir_entries(self: *Self, dir_inode: Inode) ![]DirEntry {
+    fn read_dir_entries_with_inode_id(self: *Self, dir_inode_id: u32) ![]DirEntry {
+        const inode = try self.get_inode(dir_inode_id);
+        assert(inode.is_dir());
+
+        const entries = try self.read_dir_entries_with_inode(inode);
+        errdefer DirEntry.free_entries(self.gpa, entries);
+        return entries;
+    }
+
+    /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
+    fn read_dir_entries_with_inode(self: *Self, dir_inode: Inode) ![]DirEntry {
         assert(dir_inode.is_dir());
         var entries = std.ArrayList(DirEntry).init(self.gpa);
         errdefer entries.deinit();
 
         for (dir_inode.block) |blk| {
             if (blk == 0) continue;
-            const offset = self.block_offset(blk);
-            try self.reader.seek_to(offset);
-            const entry = try DirEntry.init(self.gpa, self.reader);
-            errdefer entry.deinit();
-            try entries.append(entry);
+            var offset = self.block_offset(blk);
+            const block_end_offset = offset + self.block_size;
+            while (offset < block_end_offset) {
+                try self.reader.seek_to(offset);
+                const entry = try DirEntry.init(self.gpa, self.reader);
+                errdefer entry.deinit(self.gpa);
+                try entries.append(entry);
+                offset += entry.rec_len;
+            }
         }
 
         return entries.toOwnedSlice();
@@ -1122,31 +1140,18 @@ const Tests = struct {
         try t.expectEqual(ext2.superblock.inodes_per_group, inode_table.len);
     }
 
-    fn walk_directories(self: *EXT2, dir_inode_id: u32) ![]EXT2.DirEntry {
-        const inode = try self.get_inode(dir_inode_id);
-        assert(inode.is_dir());
-
-        const entries = try self.read_dir_entries(inode);
-        // TODO: ewww
-        errdefer {
-            for (entries) |e| e.deinit();
-            self.gpa.free(entries);
-        }
-        return entries;
-    }
-
-    test "RUN read root dir" {
+    test "read root dir" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
         var ext2 = try EXT2.init(t_alloc, &reader);
         defer ext2.deinit();
 
-        const entries = try walk_directories(&ext2, EXT2.ROOT_INODE);
-        try t.expectEqual(1, entries.len);
-        try t.expectEqualSlices(u8, ".", entries[0].name);
-        defer {
-            for (entries) |e| e.deinit();
-            ext2.gpa.free(entries);
+        const entries = try ext2.read_dir_entries_with_inode_id(EXT2.ROOT_INODE);
+        defer EXT2.DirEntry.free_entries(ext2.gpa, entries);
+        try t.expectEqual(5, entries.len);
+        const expected_names: []const []const u8 = &.{ ".", "..", "lost+found", "jpgs", "pngs" };
+        for (expected_names, entries) |expected_name, entry| {
+            try t.expectEqualSlices(u8, expected_name, entry.name);
         }
     }
 
