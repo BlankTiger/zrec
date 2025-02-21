@@ -1,0 +1,54 @@
+name: Generate kcov coverage
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    name: Build and test
+    steps:
+      - uses: actions/checkout@v3
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.0-dev.3239+d7b93c787
+
+
+      - name: Build kcov
+        run: |
+          sudo apt-get install -y binutils-dev libssl-dev libcurl4-openssl-dev libelf-dev libstdc++-12-dev zlib1g-dev libdw-dev libiberty-dev
+          git clone --depth 1 https://github.com/SimonKagstrom/kcov
+          cd kcov && mkdir build && cd build && cmake .. && make && sudo make install
+
+      - name: Get coverage report
+        run: |
+          zig build test -Donly-prepare-env
+          zig test src/lib.zig --test-cmd kcov --test-cmd "--include-path=./src" --test-cmd docs --test-cmd-bin
+
+      - name: Commit files
+        run: |
+          git config --global --add safe.directory /github/workspace
+          git config --local user.email "kcov@test.com"
+          git config --local user.name "kcov"
+          git add docs
+          git commit -m "coverage report"
+
+      - name: Force push to destination branch
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages
+          force: true
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'docs'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+

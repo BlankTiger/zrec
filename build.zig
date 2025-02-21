@@ -134,6 +134,8 @@ fn build_and_run_step(b: *std.Build) !void {
 fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {
     const filters: []const []const u8 =
         b.option([]const []const u8, "test-filter", "Only run tests matching this") orelse &.{};
+    const only_prepare_env: bool =
+        b.option(bool, "only-prepare-env", "Only prepare environment for test running") orelse false;
     const test_s = b.step("test", "Run unit tests");
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
@@ -153,13 +155,16 @@ fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) 
         .optimize = optimize,
         .filters = filters,
     });
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
     test_s.dependOn(clean);
     test_s.dependOn(create_fs);
-    test_s.dependOn(&run_exe_unit_tests.step);
-    test_s.dependOn(&run_lib_unit_tests.step);
+
+    if (!only_prepare_env) {
+        const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+        const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+
+        test_s.dependOn(&run_exe_unit_tests.step);
+        test_s.dependOn(&run_lib_unit_tests.step);
+    }
 }
 
 fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {
