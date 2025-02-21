@@ -2,9 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lib = @import("lib.zig");
 const Reader = lib.Reader;
-const FAT32 = @import("filesystems/fat.zig").FAT32;
-const NTFS = @import("filesystems/ntfs.zig").NTFS;
-const EXT2 = @import("filesystems/ext2.zig").EXT2;
+const FAT32 = @import("filesystems/FAT.zig");
+const NTFS = @import("filesystems/NTFS.zig");
+const EXT2 = @import("filesystems/EXT2.zig");
 const log = std.log.scoped(.filesystems);
 
 const Error =
