@@ -451,13 +451,14 @@ pub const Inode = extern struct {
         /// Socket.
         pub const EXT2_S_IFSOCK: FileFormat = .{ .EXT2_S_IFREG = 1, .EXT2_S_IFDIR = 1 };
 
+        access_rights: AccessRights,
+        process_execution: ProcessExecution,
+        file_format: FileFormat,
+
         pub fn backing_integer(self: Mode) @typeInfo(Mode).@"struct".backing_integer.? {
             return @bitCast(self);
         }
 
-        access_rights: AccessRights,
-        process_execution: ProcessExecution,
-        file_format: FileFormat,
     };
 
     const Flags = packed struct(u32) {
@@ -787,7 +788,7 @@ pub const Error =
     };
 
 gpa: Allocator,
-reader: *Reader,
+reader: Reader,
 superblock: *Superblock,
 bg_desc_table: BlockGroupDescriptorTable,
 /// Should always be equal in len to bg_desc_table (one inode_table per group).
@@ -804,7 +805,7 @@ pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
 
     var self: Self = .{
         .gpa = gpa,
-        .reader = reader,
+        .reader = reader.*,
         .superblock = superblock,
         .bg_desc_table = &.{},
         .inode_tables = undefined,
@@ -813,7 +814,7 @@ pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
         .is_sparse = superblock.feature_ro_compat.EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER,
     };
 
-    self.bg_desc_table = try parse_bg_desc_table(self);
+    self.bg_desc_table = try parse_bg_desc_table(&self);
     errdefer gpa.free(self.bg_desc_table);
 
     self.inode_tables = try InodeTables.init(gpa, @intCast(self.bg_desc_table.len), self.superblock.inodes_per_group);
@@ -826,6 +827,7 @@ pub fn deinit(self: Self) void {
     self.gpa.destroy(self.superblock);
     self.gpa.free(self.bg_desc_table);
     self.inode_tables.deinit();
+    self.reader.deinit();
 }
 
 pub fn get_size(self: Self) f64 {
@@ -852,12 +854,12 @@ fn parse_superblock_at_offset(gpa: Allocator, reader: *Reader, offset: usize) Er
     return s;
 }
 
-fn parse_bg_desc_table(self: Self) Error!BlockGroupDescriptorTable {
+fn parse_bg_desc_table(self: *Self) Error!BlockGroupDescriptorTable {
     const offset = self.block_group_desc_table_offset(0);
     return try self.parse_bg_desc_table_at_offset(offset);
 }
 
-fn parse_bg_desc_table_at_offset(self: Self, offset: usize) Error!BlockGroupDescriptorTable {
+fn parse_bg_desc_table_at_offset(self: *Self, offset: usize) Error!BlockGroupDescriptorTable {
     const table = try self.gpa.alloc(BlockGroupDescriptor, self.n_groups);
     errdefer self.gpa.free(table);
 
@@ -921,7 +923,7 @@ fn get_used_blocks_in_group(self: Self, group_id: u32) u32 {
 }
 
 /// Caller owns the returned InodeTable and must free it.
-fn get_inode_table(self: Self, group_id: u32) !InodeTable {
+fn get_inode_table(self: *Self, group_id: u32) !InodeTable {
     assert(group_id < self.bg_desc_table.len);
     const i_table = try self.gpa.alloc(Inode, self.superblock.inodes_per_group);
     errdefer self.gpa.free(i_table);
@@ -975,7 +977,7 @@ fn read_dir_entries_with_inode(self: *Self, dir_inode: Inode) ![]DirEntry {
         const block_end_offset = offset + self.block_size;
         while (offset < block_end_offset) {
             try self.reader.seek_to(offset);
-            const entry = try DirEntry.init(self.gpa, self.reader);
+            const entry = try DirEntry.init(self.gpa, &self.reader);
             errdefer entry.deinit(self.gpa);
             try entries.append(entry);
             offset += entry.rec_len;
@@ -1039,24 +1041,24 @@ const Tests = struct {
     test "has copies of the superblock and block group descriptor table" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
-        const ext2 = try init(t_alloc, &reader);
+        var ext2 = try init(t_alloc, &reader);
         defer ext2.deinit();
 
-        const superblock = try parse_superblock_at_offset(ext2.gpa, ext2.reader, ext2.block_group_offset(1));
+        const superblock = try parse_superblock_at_offset(ext2.gpa, &ext2.reader, ext2.block_group_offset(1));
         defer ext2.gpa.destroy(superblock);
 
-        const bg_desc_table = try parse_bg_desc_table_at_offset(ext2, ext2.block_group_desc_table_offset(1));
+        const bg_desc_table = try parse_bg_desc_table_at_offset(&ext2, ext2.block_group_desc_table_offset(1));
         defer ext2.gpa.free(bg_desc_table);
 
         for (2..ext2.n_groups + 1) |idx| {
             if (!ext2.is_backup_block_group(idx)) continue;
 
             const superblock_offset = ext2.block_group_offset(idx);
-            const copy_superblock = try parse_superblock_at_offset(ext2.gpa, ext2.reader, superblock_offset);
+            const copy_superblock = try parse_superblock_at_offset(ext2.gpa, &ext2.reader, superblock_offset);
             defer ext2.gpa.destroy(copy_superblock);
 
             const bg_desc_table_offset = ext2.block_group_desc_table_offset(idx);
-            const copy_bg_desc_table = try parse_bg_desc_table_at_offset(ext2, bg_desc_table_offset);
+            const copy_bg_desc_table = try parse_bg_desc_table_at_offset(&ext2, bg_desc_table_offset);
             defer ext2.gpa.free(copy_bg_desc_table);
 
             try expectEqualSuperblock(superblock, copy_superblock);
@@ -1086,7 +1088,7 @@ const Tests = struct {
         );
     }
 
-    fn get_used_blocks_in_group_dumb(self: Self, group_id: u32) !u32 {
+    fn get_used_blocks_in_group_dumb(self: *Self, group_id: u32) !u32 {
         assert(group_id < self.bg_desc_table.len);
         const block_bitmap_off = self.bg_desc_table[group_id].block_bitmap * self.block_size;
         try self.reader.seek_to(block_bitmap_off);
@@ -1100,10 +1102,10 @@ const Tests = struct {
     test "used blocks in group match" {
         var reader = try create_ext2_reader();
         defer reader.deinit();
-        const ext2: Self = try .init(t_alloc, &reader);
+        var ext2: Self = try .init(t_alloc, &reader);
         defer ext2.deinit();
 
-        try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(ext2, 0));
+        try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(&ext2, 0));
     }
 
     test "get ROOT_INODE" {

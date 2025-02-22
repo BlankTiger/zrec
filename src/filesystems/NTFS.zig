@@ -4,7 +4,7 @@ const Reader = lib.Reader;
 const Allocator = std.mem.Allocator;
 
 alloc: Allocator,
-reader: *Reader,
+reader: Reader,
 buf: []u8,
 mem: []u8,
 
@@ -34,6 +34,7 @@ pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
 
 pub fn deinit(self: *Self) void {
     self.alloc.free(self.buf);
+    self.reader.deinit();
     self.* = undefined;
 }
 

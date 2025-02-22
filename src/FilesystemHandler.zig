@@ -86,7 +86,9 @@ pub const Filesystem = union(enum) {
 /// Caller must call deinit on the resulting Filesystem
 pub fn determine_filesystem(self: *FsHandler) Error!Filesystem {
     inline for (std.meta.fields(Filesystem)) |field| {
-        if (field.type.init(self.alloc, try self.create_new_reader())) |fs| {
+        var reader = try self.create_new_reader();
+        errdefer reader.deinit();
+        if (field.type.init(self.alloc, &reader)) |fs| {
             return @unionInit(Filesystem, field.name, fs);
         } else |err| {
             log.info("couldnt init {any}, err: {any}", .{field.type, err});
@@ -97,19 +99,14 @@ pub fn determine_filesystem(self: *FsHandler) Error!Filesystem {
     return Error.NoFilesystemMatch;
 }
 
-/// *Reader is kept internally in an ArrayList.
-/// Calling deinit on FilesystemHandler also deinits *Reader.
-pub fn create_new_reader(self: *FsHandler) Error!*Reader {
+/// Caller must call `deinit` on the resulting Reader.
+pub fn create_new_reader(self: *FsHandler) Error!Reader {
     const f = try self.alloc.create(std.fs.File);
     errdefer self.alloc.destroy(f);
     f.* = try std.fs.cwd().openFile(self.path, .{});
     try self._files.append(f);
 
-    const custom_reader = try self.alloc.create(Reader);
-    errdefer self.alloc.destroy(custom_reader);
-    custom_reader.* = try Reader.init(f);
-    try self._readers.append(custom_reader);
-    return custom_reader;
+    return try Reader.init(f);
 }
 
 test {

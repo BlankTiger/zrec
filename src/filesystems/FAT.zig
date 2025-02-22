@@ -243,7 +243,7 @@ pub const FileAllocationTable = struct {
 pub const BootSector = BootSectorImpl();
 
 gpa: Allocator,
-reader: *Reader,
+reader: Reader,
 buf: []u8,
 filesystem: []u8,
 boot_sector: *BootSector,
@@ -291,7 +291,7 @@ pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
 
     var self: Self = .{
         .gpa = gpa,
-        .reader = reader,
+        .reader = reader.*,
         .buf = buf[0..],
         .filesystem = mem,
         .boot_sector = bs,
@@ -362,11 +362,11 @@ pub fn get_free_size(self: Self) f64 {
 }
 
 /// caller has to call destroy on the resulting pointer
-pub fn get_root_dir(self: Self) !*FAT32Dir {
+pub fn get_root_dir(self: *Self) !*FAT32Dir {
     return try self.get_dir(self.boot_sector.root_cluster);
 }
 
-pub fn get_dir(self: Self, cluster_number: usize) !*FAT32Dir {
+pub fn get_dir(self: *Self, cluster_number: usize) !*FAT32Dir {
     assert(cluster_number >= self.boot_sector.root_cluster);
     try self.reader.seek_to(cluster_number);
     const dir = try self.gpa.create(FAT32Dir);
@@ -410,7 +410,7 @@ const Tests = struct {
         var fs = try fs_handler.determine_filesystem();
         defer fs.deinit();
 
-        const fat = fs.fat32;
+        var fat = fs.fat32;
         const root_dir = try fat.get_root_dir();
         defer fs_handler.alloc.destroy(root_dir);
 

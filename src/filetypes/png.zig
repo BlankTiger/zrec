@@ -29,14 +29,14 @@ pub const PNGRecoverer = struct {
     };
 
     alloc: Allocator,
-    reader: *Reader,
+    reader: Reader,
     stride: usize = 512,
     max_size: usize = 20e6,
     debug: bool = false,
 
     const Self = @This();
 
-    pub fn init(alloc: Allocator, reader: *Reader) Self {
+    pub fn init(alloc: Allocator, reader: Reader) Self {
         return Self {
             .alloc = alloc,
             .reader = reader,
@@ -201,9 +201,9 @@ const Tests = struct {
             }
             {
                 const f = try std.fs.cwd().openFile(p, .{});
-                var reader = try Reader.init(&f);
-                defer reader.deinit();
-                var png_r = PNGRecoverer.init(t_alloc, &reader);
+                const reader = try Reader.init(&f);
+                var png_r = PNGRecoverer.init(t_alloc, reader);
+                defer png_r.deinit();
                 var png = (try png_r.find_next()).?;
                 tlog.debug("recovered_data_len: {d}", .{png.data.len});
                 defer png.deinit();

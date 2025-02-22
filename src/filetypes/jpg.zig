@@ -29,7 +29,7 @@ pub const JPGRecoverer = struct {
     };
 
     alloc: Allocator,
-    reader: *Reader,
+    reader: Reader,
     // /// directions on how to navigate the given reader
     // /// example: 
     // reader_map: ?*const ReaderMap = null,
@@ -39,11 +39,15 @@ pub const JPGRecoverer = struct {
 
     const Self = @This();
 
-    pub fn init(alloc: Allocator, reader: *Reader) Self {
+    pub fn init(alloc: Allocator, reader: Reader) Self {
         return Self {
             .alloc = alloc,
             .reader = reader,
         };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.reader.deinit();
     }
 
     fn is_jpg_start(bytes: []const u8) bool {
@@ -194,9 +198,9 @@ const Tests = struct {
             }
             {
                 const f = try std.fs.cwd().openFile(p, .{});
-                var reader = try Reader.init(&f);
-                defer reader.deinit();
-                var jpg_r = JPGRecoverer.init(t_alloc, &reader);
+                const reader = try Reader.init(&f);
+                var jpg_r = JPGRecoverer.init(t_alloc, reader);
+                defer jpg_r.deinit();
                 var jpg = (try jpg_r.find_next()).?;
                 tlog.debug("recovered_data_len: {d}", .{jpg.data.len});
                 defer jpg.deinit();
