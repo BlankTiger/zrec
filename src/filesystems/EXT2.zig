@@ -1154,5 +1154,7 @@ const Tests = struct {
         }
     }
 
-    test "RUN list files" {}
+    test "tree" {
+
+    }
 };

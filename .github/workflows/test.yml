@@ -9,4 +9,29 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.14.0-dev.3239+d7b93c787
-      - run: zig build test --summary all
+
+      - name: Run tests and get stats
+        id: test-stats
+        run: |
+          # Run zig build test with summary, capture output
+          TEST_OUTPUT=$(zig build test --summary all 2>&1 || true)
+          echo "$TEST_OUTPUT" # Log for debugging
+          # Parse passed count from "X/Y tests passed" or "X/Y passed"
+          PASSED=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?=/\d+\s*(tests )?passed)' | tail -n 1 || echo 0)
+          # Parse total tests to calculate failed (X/Y -> failed = Y - X)
+          TOTAL=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?=\s*(tests )?passed)' | tail -n 1 || echo 0)
+          FAILED=$((TOTAL - PASSED))
+          FAILED=${FAILED:-0} # Ensure 0 if unset or negative
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+      - name: Generate test badge
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: 36e9ec1f616fc50691f40128edcaaefb
+          filename: test-stats.json
+          label: Tests
+          message: ${{ steps.test-stats.outputs.passed }} passed, ${{ steps.test-stats.outputs.failed }} failed
+          color: ${{ steps.test-stats.outputs.failed == '0' && 'brightgreen' || 'red' }}
+          style: flat

@@ -7,13 +7,12 @@ jobs:
       contents: write
       pages: write
       id-token: write
-    name: Build and test
+    name: Generate coverage
     steps:
       - uses: actions/checkout@v3
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.14.0-dev.3239+d7b93c787
-
 
       - name: Build kcov
         run: |
@@ -21,10 +20,33 @@ jobs:
           git clone --depth 1 https://github.com/SimonKagstrom/kcov
           cd kcov && mkdir build && cd build && cmake .. && make && sudo make install
 
-      - name: Get coverage report
+      - name: Run tests and get coverage
+        id: test-stats
         run: |
           zig build test -Donly-prepare-env
-          zig test src/lib.zig --test-cmd kcov --test-cmd "--include-path=./src" --test-cmd docs --test-cmd-bin
+          # Run tests with kcov, ignore exit code to ensure coverage output
+          zig test src/lib.zig --test-cmd kcov --test-cmd "--include-path=./src" --test-cmd docs --test-cmd-bin 2>&1 || true
+          # Find the latest coverage.json in docs/test* and extract percent_covered
+          COVERAGE_FILE=$(find docs/test* -name "coverage.json" -print0 | xargs -0 ls -t | head -n 1)
+          if [ -f "$COVERAGE_FILE" ]; then
+            COVERAGE=$(jq -r '.percent_covered' "$COVERAGE_FILE")
+          else
+            COVERAGE="0.00"
+          fi
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+
+      - name: Generate coverage badge
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: 4520018b4162196dc185a4059fc2d8ac
+          filename: coverage.json
+          label: Coverage
+          message: ${{ steps.test-stats.outputs.coverage }}%
+          valColorRange: ${{ steps.test-stats.outputs.coverage }}
+          maxColorRange: 100
+          minColorRange: 50
+          style: flat
 
       - name: Commit files
         run: |
@@ -32,7 +54,7 @@ jobs:
           git config --local user.email "kcov@test.com"
           git config --local user.name "kcov"
           git add docs
-          git commit -m "coverage report"
+          git commit -m "coverage report" || echo "No changes to commit"
 
       - name: Force push to destination branch
         uses: ad-m/github-push-action@master
@@ -50,5 +72,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-
