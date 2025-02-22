@@ -7,7 +7,7 @@ const log = std.log.scoped(.ext2);
 const set_fields_alignment_in_struct = lib.set_fields_alignment_in_struct;
 const set_fields_alignment = lib.set_fields_alignment;
 
-const Self = @This();
+const EXT2 = @This();
 
 const SuperblockOffset = 0x400;
 
@@ -797,13 +797,13 @@ n_groups: u32,
 block_size: u32,
 is_sparse: bool,
 
-pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
+pub fn init(gpa: Allocator, reader: *Reader) Error!EXT2 {
     const superblock = try parse_superblock(gpa, reader);
     errdefer gpa.destroy(superblock);
 
     if (superblock.magic != 0xef53) return error.NotEXT2;
 
-    var self: Self = .{
+    var self: EXT2 = .{
         .gpa = gpa,
         .reader = reader.*,
         .superblock = superblock,
@@ -823,18 +823,18 @@ pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
     return self;
 }
 
-pub fn deinit(self: Self) void {
+pub fn deinit(self: EXT2) void {
     self.gpa.destroy(self.superblock);
     self.gpa.free(self.bg_desc_table);
     self.inode_tables.deinit();
     self.reader.deinit();
 }
 
-pub fn get_size(self: Self) f64 {
+pub fn get_size(self: EXT2) f64 {
     return @floatFromInt(self.superblock.blocks_count * self.block_size);
 }
 
-pub fn get_free_size(self: Self) f64 {
+pub fn get_free_size(self: EXT2) f64 {
     return @floatFromInt(self.superblock.free_blocks_count * self.block_size);
 }
 
@@ -854,12 +854,12 @@ fn parse_superblock_at_offset(gpa: Allocator, reader: *Reader, offset: usize) Er
     return s;
 }
 
-fn parse_bg_desc_table(self: *Self) Error!BlockGroupDescriptorTable {
+fn parse_bg_desc_table(self: *EXT2) Error!BlockGroupDescriptorTable {
     const offset = self.block_group_desc_table_offset(0);
     return try self.parse_bg_desc_table_at_offset(offset);
 }
 
-fn parse_bg_desc_table_at_offset(self: *Self, offset: usize) Error!BlockGroupDescriptorTable {
+fn parse_bg_desc_table_at_offset(self: *EXT2, offset: usize) Error!BlockGroupDescriptorTable {
     const table = try self.gpa.alloc(BlockGroupDescriptor, self.n_groups);
     errdefer self.gpa.free(table);
 
@@ -873,22 +873,22 @@ fn parse_bg_desc_table_at_offset(self: *Self, offset: usize) Error!BlockGroupDes
 }
 
 /// Should always be the next block over from superblock (check if filesystem has sparse copies).
-fn block_group_desc_table_offset(self: Self, group_idx: usize) usize {
+fn block_group_desc_table_offset(self: EXT2, group_idx: usize) usize {
     if (group_idx == 0) return if (self.block_size == @sizeOf(Superblock)) self.block_size * 2 else self.block_size;
     const bg_offset = self.block_group_offset(group_idx);
     return bg_offset + self.block_size;
 }
 
-fn block_group_offset(self: Self, group_idx: usize) usize {
+fn block_group_offset(self: EXT2, group_idx: usize) usize {
     if (group_idx == 0) return SuperblockOffset;
     return self.block_size * group_idx * self.superblock.blocks_per_group;
 }
 
-fn block_offset(self: Self, block_id: u32) usize {
+fn block_offset(self: EXT2, block_id: u32) usize {
     return self.block_size * block_id;
 }
 
-fn is_backup_block_group(self: Self, block_group_idx: usize) bool {
+fn is_backup_block_group(self: EXT2, block_group_idx: usize) bool {
     if (!self.is_sparse) return true;
     if (block_group_idx == 1) return true;
 
@@ -912,18 +912,18 @@ fn is_power_of_base(num: usize, base: usize) bool {
 
 const ROOT_INODE = 2;
 
-fn list_files(self: Self, inode_id: u32) !void {
+fn list_files(self: EXT2, inode_id: u32) !void {
     _ = self;
     _ = inode_id;
 }
 
-fn get_used_blocks_in_group(self: Self, group_id: u32) u32 {
+fn get_used_blocks_in_group(self: EXT2, group_id: u32) u32 {
     assert(group_id < self.bg_desc_table.len);
     return self.superblock.blocks_per_group - self.bg_desc_table[group_id].free_blocks_count;
 }
 
 /// Caller owns the returned InodeTable and must free it.
-fn get_inode_table(self: *Self, group_id: u32) !InodeTable {
+fn get_inode_table(self: *EXT2, group_id: u32) !InodeTable {
     assert(group_id < self.bg_desc_table.len);
     const i_table = try self.gpa.alloc(Inode, self.superblock.inodes_per_group);
     errdefer self.gpa.free(i_table);
@@ -943,7 +943,7 @@ fn get_inode_table(self: *Self, group_id: u32) !InodeTable {
     return i_table;
 }
 
-fn get_inode(self: *Self, inode_id: u32) !Inode {
+fn get_inode(self: *EXT2, inode_id: u32) !Inode {
     const group_id = self.inode_tables.get_group_id_containing_inode_id(inode_id);
     if (!self.inode_tables.has_group_filled(group_id)) {
         const inode_table = try self.get_inode_table(group_id);
@@ -956,7 +956,7 @@ fn get_inode(self: *Self, inode_id: u32) !Inode {
 }
 
 /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
-fn read_dir_entries_with_inode_id(self: *Self, dir_inode_id: u32) ![]DirEntry {
+fn read_dir_entries_with_inode_id(self: *EXT2, dir_inode_id: u32) ![]DirEntry {
     const inode = try self.get_inode(dir_inode_id);
     assert(inode.is_dir());
 
@@ -966,7 +966,7 @@ fn read_dir_entries_with_inode_id(self: *Self, dir_inode_id: u32) ![]DirEntry {
 }
 
 /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
-fn read_dir_entries_with_inode(self: *Self, dir_inode: Inode) ![]DirEntry {
+fn read_dir_entries_with_inode(self: *EXT2, dir_inode: Inode) ![]DirEntry {
     assert(dir_inode.is_dir());
     var entries = std.ArrayList(DirEntry).init(self.gpa);
     errdefer entries.deinit();
@@ -1005,9 +1005,11 @@ const Tests = struct {
     const t_alloc = t.allocator;
     const tlog = std.log.scoped(.ext2_tests);
 
-    fn create_ext2_reader() !Reader {
+    fn create_ext2() !EXT2 {
         const f = try std.fs.cwd().openFile(EXT2_PATH, .{});
-        return try Reader.init(&f);
+        var reader = try Reader.init(&f);
+        errdefer reader.deinit();
+        return try .init(t_alloc, &reader);
     }
 
     fn parse_cstr(cstr_slice: []const u8) []const u8 {
@@ -1018,9 +1020,7 @@ const Tests = struct {
     }
 
     test "has superblock at SuperblockOffset" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        const ext2 = try init(t_alloc, &reader);
+        const ext2 = try create_ext2();
         defer ext2.deinit();
 
         try t.expectEqual(0xef53, ext2.superblock.magic);
@@ -1039,9 +1039,7 @@ const Tests = struct {
     }
 
     test "has copies of the superblock and block group descriptor table" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2 = try init(t_alloc, &reader);
+        var ext2 = try create_ext2();
         defer ext2.deinit();
 
         const superblock = try parse_superblock_at_offset(ext2.gpa, &ext2.reader, ext2.block_group_offset(1));
@@ -1067,9 +1065,7 @@ const Tests = struct {
     }
 
     test "block descriptor group table starts at the first block after superblock" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        const ext2 = try init(t_alloc, &reader);
+        const ext2 = try create_ext2();
         defer ext2.deinit();
 
         try t.expectEqual(8, ext2.bg_desc_table.len);
@@ -1088,7 +1084,7 @@ const Tests = struct {
         );
     }
 
-    fn get_used_blocks_in_group_dumb(self: *Self, group_id: u32) !u32 {
+    fn get_used_blocks_in_group_dumb(self: *EXT2, group_id: u32) !u32 {
         assert(group_id < self.bg_desc_table.len);
         const block_bitmap_off = self.bg_desc_table[group_id].block_bitmap * self.block_size;
         try self.reader.seek_to(block_bitmap_off);
@@ -1100,18 +1096,14 @@ const Tests = struct {
     }
 
     test "used blocks in group match" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2: Self = try .init(t_alloc, &reader);
+        var ext2 = try create_ext2();
         defer ext2.deinit();
 
         try t.expectEqual(ext2.get_used_blocks_in_group(0), try get_used_blocks_in_group_dumb(&ext2, 0));
     }
 
     test "get ROOT_INODE" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2 = try init(t_alloc, &reader);
+        var ext2 = try create_ext2();
         defer ext2.deinit();
 
         const inode = try ext2.get_inode(ROOT_INODE);
@@ -1130,9 +1122,7 @@ const Tests = struct {
     }
 
     test "get inode_table" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2 = try init(t_alloc, &reader);
+        var ext2 = try create_ext2();
         defer ext2.deinit();
 
         const inode_table = try ext2.get_inode_table(0);
@@ -1142,9 +1132,7 @@ const Tests = struct {
     }
 
     test "read root dir" {
-        var reader = try create_ext2_reader();
-        defer reader.deinit();
-        var ext2 = try init(t_alloc, &reader);
+        var ext2 = try create_ext2();
         defer ext2.deinit();
 
         const entries = try ext2.read_dir_entries_with_inode_id(ROOT_INODE);
