@@ -387,7 +387,8 @@ pub const InodeTables = struct {
         const group_id = self.get_group_id_containing_inode_id(inode_id);
         // TODO: verify if -1 is correct. I think it is, because inode ids start from 1.
         const inode_id_in_group = (inode_id - 1) % self.inodes_per_group;
-        return self.tables[group_id][inode_id_in_group];
+        const inode = self.tables[group_id][inode_id_in_group];
+        return inode;
     }
 };
 
@@ -774,6 +775,14 @@ const DirEntry = struct {
         }
         gpa.free(entries);
     }
+
+    pub fn free_entries_without_names(gpa: Allocator, entries: []DirEntry) void {
+        gpa.free(entries);
+    }
+
+    pub fn is_dir(self: DirEntry) bool {
+        return self.file_type == .EXT2_FT_DIR;
+    }
 };
 
 pub const Error =
@@ -928,7 +937,8 @@ fn get_inode_table(self: *EXT2, group_id: u32) !InodeTable {
     const i_table = try self.gpa.alloc(Inode, self.superblock.inodes_per_group);
     errdefer self.gpa.free(i_table);
 
-    const offset = (self.bg_desc_table[group_id].inode_table % self.superblock.blocks_per_group) * self.block_size;
+    const first = group_id * self.superblock.blocks_per_group * self.block_size;
+    const offset = first + (self.bg_desc_table[group_id].inode_table % self.superblock.blocks_per_group) * self.block_size;
     try self.reader.seek_to(offset);
 
     // TODO: maybe this can be somehow optimized, or maybe we shouldn't do this at all and
@@ -967,6 +977,11 @@ fn read_dir_entries_with_inode_id(self: *EXT2, dir_inode_id: u32) ![]DirEntry {
 
 /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
 fn read_dir_entries_with_inode(self: *EXT2, dir_inode: Inode) ![]DirEntry {
+    return self.read_dir_entries_with_inode_dot_dirs(dir_inode, true);
+}
+
+/// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
+fn read_dir_entries_with_inode_dot_dirs(self: *EXT2, dir_inode: Inode, with_dot_dirs: bool) ![]DirEntry {
     assert(dir_inode.is_dir());
     var entries = std.ArrayList(DirEntry).init(self.gpa);
     errdefer entries.deinit();
@@ -979,12 +994,62 @@ fn read_dir_entries_with_inode(self: *EXT2, dir_inode: Inode) ![]DirEntry {
             try self.reader.seek_to(offset);
             const entry = try DirEntry.init(self.gpa, &self.reader);
             errdefer entry.deinit(self.gpa);
-            try entries.append(entry);
+            if (entry.inode_id == 0) {
+                entry.deinit(self.gpa);
+            } else if (!with_dot_dirs and (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, ".."))) {
+                entry.deinit(self.gpa);
+            } else {
+                try entries.append(entry);
+            }
             offset += entry.rec_len;
         }
     }
 
     return entries.toOwnedSlice();
+}
+
+/// Caller owns and must free the returned memory.
+fn read_dir_entries_recursively_for_inode_id(self: *EXT2, inode_id: u32) ![]DirEntry {
+    const inode = try self.get_inode(inode_id);
+    if (!inode.is_dir()) return try self.gpa.alloc(DirEntry, 0);
+
+    const root_entries = try self.read_dir_entries_with_inode_dot_dirs(inode, false);
+    var entries = std.ArrayList(DirEntry).fromOwnedSlice(self.gpa, root_entries);
+    errdefer entries.deinit();
+
+    var last_loop_entries = entries.items;
+    while (dir_entries_contain_directory(last_loop_entries)) {
+        var loop_entries = std.ArrayList(DirEntry).init(self.gpa);
+        errdefer for (loop_entries.items) |e| e.deinit(self.gpa);
+        errdefer loop_entries.deinit();
+
+        for (last_loop_entries) |e| {
+            if (!e.is_dir()) continue;
+            if (std.mem.eql(u8, e.name, ".") or std.mem.eql(u8, e.name, "..")) continue;
+            const dir_inode = try self.get_inode(e.inode_id);
+            const dir_entries = try self.read_dir_entries_with_inode_dot_dirs(dir_inode, false);
+            errdefer DirEntry.free_entries(self.gpa, dir_entries);
+            defer self.gpa.free(dir_entries);
+            try loop_entries.appendSlice(dir_entries);
+        }
+
+        const curr_loop_entries = try loop_entries.toOwnedSlice();
+        defer self.gpa.free(curr_loop_entries);
+        const idx_start_last_loop_entries = entries.items.len;
+        try entries.appendSlice(curr_loop_entries);
+        last_loop_entries = entries.items[idx_start_last_loop_entries..entries.items.len];
+    }
+
+    return try entries.toOwnedSlice();
+}
+
+/// Doesn't consider "." and ".." as a directory.
+fn dir_entries_contain_directory(entries: []DirEntry) bool {
+    for (entries) |e| {
+        if (e.is_dir() and !std.mem.eql(u8, e.name, ".") and !std.mem.eql(u8, e.name, ".."))
+            return true;
+    }
+    return false;
 }
 
 fn count_bits_on(bytes: []u8) u32 {
@@ -1144,7 +1209,29 @@ const Tests = struct {
         }
     }
 
-    test "tree" {
+    test "read root dir recursive" {
+        var ext2 = try create_ext2();
+        defer ext2.deinit();
 
+        const all_entries = try ext2.read_dir_entries_recursively_for_inode_id(ROOT_INODE);
+        defer DirEntry.free_entries(ext2.gpa, all_entries);
+
+        try t.expectEqual(11, all_entries.len);
+        const expected_names: []const []const u8 = &.{
+            "lost+found",
+            "jpgs",
+            "pngs",
+            "example1.jpg",
+            "example2.jpg",
+            "example3.jpg",
+            "example4.jpg",
+            "example1.png",
+            "example2.png",
+            "example3.png",
+            "example4.png",
+        };
+        for (expected_names, all_entries) |expected_name, entry| {
+            try t.expectEqualSlices(u8, expected_name, entry.name);
+        }
     }
 };
