@@ -790,6 +790,7 @@ pub const Error =
     || std.fs.File.ReadError
     || error{
         NotEXT2,
+        UnsupportedEXT2Revision,
         FileTooSmall,
         UnimplementedCurrently,
         NotEnoughReadToParseSuperblock,
@@ -811,6 +812,8 @@ pub fn init(gpa: Allocator, reader: *Reader) Error!EXT2 {
     errdefer gpa.destroy(superblock);
 
     if (superblock.magic != 0xef53) return error.NotEXT2;
+    // TODO: handle revision 0 too (maybe)
+    if (superblock.rev_level != .EXT2_DYNAMIC_REV) return error.UnsupportedEXT2Revision;
 
     var self: EXT2 = .{
         .gpa = gpa,
