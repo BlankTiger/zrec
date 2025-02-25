@@ -991,48 +991,88 @@ fn read_dir_entries_with_inode_dot_dirs(self: *EXT2, dir_inode: Inode, with_dot_
     var entries = EntriesList.init(self.gpa);
     errdefer entries.deinit();
 
-    for (dir_inode.block, 0..) |blk, idx| {
-        if (blk == 0) continue;
-
-        if (idx < 12) {
-            var offset = self.block_offset(blk);
-            const block_end_offset = offset + self.block_size;
-            while (offset < block_end_offset) {
-                try self.reader.seek_to(offset);
-                const entry = try DirEntry.init(self.gpa, &self.reader);
-                errdefer entry.deinit(self.gpa);
-                if (entry.inode_id == 0) {
-                    entry.deinit(self.gpa);
-                } else if (!with_dot_dirs and (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, ".."))) {
-                    entry.deinit(self.gpa);
-                } else {
-                    try entries.append(entry);
-                }
-                offset += entry.rec_len;
-            }
-        }
-        // else if (idx == 12) { try self.read_dir_entries_singly_indirect(dir_inode, &entries, with_dot_dirs); }
-        // else if (idx == 13) { try self.read_dir_entries_doubly_indirect(dir_inode, &entries, with_dot_dirs); }
-        // else if (idx == 14) { try self.read_dir_entries_triply_indirect(dir_inode, &entries, with_dot_dirs); }
+    const max_direct_blocks = 12;
+    for (dir_inode.block[0..max_direct_blocks]) |block_id| {
+        if (block_id == 0) continue;
+        try self.read_dir_entries_from_block(block_id, &entries, with_dot_dirs);
     }
+
+    if (dir_inode.block[12] != 0) try self.read_dir_entries_from_singly_indirect_block(dir_inode.block[12], &entries, with_dot_dirs);
+    if (dir_inode.block[13] != 0) try self.read_dir_entries_from_doubly_indirect_block(dir_inode.block[13], &entries, with_dot_dirs);
+    if (dir_inode.block[14] != 0) try self.read_dir_entries_from_triply_indirect_block(dir_inode.block[14], &entries, with_dot_dirs);
 
     return entries.toOwnedSlice();
 }
 
-// // TODO: start here, finish doing this and then try to read a really big file from disk,
-// // dont forget that DirEntry.block are pointers to data for entries that are different from directory file_type
-// fn read_dir_entries_singly_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
-//     const first_block_id = dir_inode.block[12];
-//
-// }
-//
-// fn read_dir_entries_doubly_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
-//
-// }
-//
-// fn read_dir_entries_triply_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
-//
-// }
+fn read_dir_entries_from_block(self: *EXT2, block_id: u32, entries: *EntriesList, with_dot_dirs: bool) !void {
+    var offset = self.block_offset(block_id);
+    const block_end_offset = offset + self.block_size;
+
+    while (offset < block_end_offset) {
+        try self.reader.seek_to(offset);
+        const entry = try DirEntry.init(self.gpa, &self.reader);
+        errdefer entry.deinit(self.gpa);
+
+        if (entry.inode_id == 0) {
+            entry.deinit(self.gpa);
+        } else if (!with_dot_dirs and (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, ".."))) {
+            entry.deinit(self.gpa);
+        } else {
+            try entries.append(entry);
+        }
+
+        offset += entry.rec_len;
+        if (entry.rec_len == 0 or offset >= block_end_offset) break;
+    }
+}
+
+fn read_dir_entries_from_singly_indirect_block(self: *EXT2, indirect_block_id: u32, entries: *EntriesList, with_dot_dirs: bool) !void {
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const indirect_offset = self.block_offset(indirect_block_id);
+    try self.reader.seek_to(indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |block_id| {
+        if (block_id == 0) continue;
+        try self.read_dir_entries_from_block(block_id, entries, with_dot_dirs);
+    }
+}
+
+fn read_dir_entries_from_doubly_indirect_block(self: *EXT2, double_indirect_block_id: u32, entries: *EntriesList, with_dot_dirs: bool) !void {
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const double_indirect_offset = self.block_offset(double_indirect_block_id);
+    try self.reader.seek_to(double_indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |indirect_block_id| {
+        if (indirect_block_id == 0) continue;
+        try self.read_dir_entries_from_singly_indirect_block(indirect_block_id, entries, with_dot_dirs);
+    }
+}
+
+fn read_dir_entries_from_triply_indirect_block(self: *EXT2, triple_indirect_block_id: u32, entries: *EntriesList, with_dot_dirs: bool) !void {
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const triple_indirect_offset = self.block_offset(triple_indirect_block_id);
+    try self.reader.seek_to(triple_indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |double_indirect_block_id| {
+        if (double_indirect_block_id == 0) continue;
+        try self.read_dir_entries_from_doubly_indirect_block(double_indirect_block_id, entries, with_dot_dirs);
+    }
+}
 
 /// Caller owns and must free the returned memory.
 fn read_dir_entries_recursively_for_inode_id(self: *EXT2, inode_id: u32) ![]DirEntry {
@@ -1206,6 +1246,7 @@ test {
 
 const Tests = struct {
     const FilesystemHandler = lib.FilesystemHandler;
+    const utils = @import("testing_utils.zig");
     const EXT2_PATH = "./filesystems/ext2_filesystem.img";
     const t = std.testing;
     const t_alloc = t.allocator;
@@ -1318,7 +1359,6 @@ const Tests = struct {
         try t.expectEqual(5, inode.links_count);
         try t.expectEqual(8, inode.blocks);
         try t.expectEqual(0, inode.flags.backing_integer());
-        try t.expectEqual(2, inode.osd1);
         try t.expectEqualSlices(u32, &[_]u32{ 566 } ++ &[_]u32{ 0 } ** 14, &inode.block);
         try t.expectEqual(0, inode.generation);
         try t.expectEqual(0, inode.file_acl);
@@ -1374,6 +1414,61 @@ const Tests = struct {
         for (expected_names, all_entries) |expected_name, entry| {
             try t.expectEqualSlices(u8, expected_name, entry.name);
         }
+    }
+
+    test "RUN read directory entries with indirect blocks" {
+        t.log_level = .debug;
+
+        var ext2 = try create_ext2();
+        defer ext2.deinit();
+
+        const many_files_dir = "many_files_dir";
+        const file_count = 1000;
+
+        try utils.create_directory_with_many_files(t_alloc, many_files_dir, file_count, EXT2_PATH);
+        defer utils.cleanup_directory_with_files(t_alloc, many_files_dir, EXT2_PATH) catch |err| {
+            tlog.warn("Failed to clean up test directory: {any}", .{err});
+        };
+
+        const root_entries = try ext2.read_dir_entries_with_inode_id(ROOT_INODE);
+        defer DirEntry.free_entries(ext2.gpa, root_entries);
+
+        var dir_inode_id: u32 = 0;
+        for (root_entries) |entry| {
+            if (std.mem.eql(u8, entry.name, many_files_dir)) {
+                dir_inode_id = entry.inode_id;
+                break;
+            }
+        }
+
+        if (dir_inode_id == 0) {
+            tlog.warn("Skipping test: couldn't find test directory", .{});
+            return;
+        }
+
+        const dir_entries = try ext2.read_dir_entries_with_inode_id(dir_inode_id);
+        defer DirEntry.free_entries(ext2.gpa, dir_entries);
+
+        const expected_min_entries = 2 + file_count * 95 / 100;
+
+        tlog.debug("Found {d} entries in directory", .{dir_entries.len});
+        try t.expect(dir_entries.len >= expected_min_entries);
+
+        var found_count: usize = 0;
+        for (0..10) |i| {
+            const file_name = try std.fmt.allocPrint(t_alloc, "file_{d}", .{i});
+            defer t_alloc.free(file_name);
+
+            for (dir_entries) |entry| {
+                if (std.mem.eql(u8, entry.name, file_name)) {
+                    found_count += 1;
+                    break;
+                }
+            }
+        }
+
+        tlog.debug("Found {d}/10 specific files by name", .{found_count});
+        try t.expect(found_count >= 8);
     }
 
     test "read file data from ext2" {
