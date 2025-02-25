@@ -983,33 +983,56 @@ fn read_dir_entries_with_inode(self: *EXT2, dir_inode: Inode) ![]DirEntry {
     return self.read_dir_entries_with_inode_dot_dirs(dir_inode, true);
 }
 
+const EntriesList = std.ArrayList(DirEntry);
+
 /// Caller owns and must free the returned memory. Asserts that passed inode is a dir.
 fn read_dir_entries_with_inode_dot_dirs(self: *EXT2, dir_inode: Inode, with_dot_dirs: bool) ![]DirEntry {
     assert(dir_inode.is_dir());
-    var entries = std.ArrayList(DirEntry).init(self.gpa);
+    var entries = EntriesList.init(self.gpa);
     errdefer entries.deinit();
 
-    for (dir_inode.block) |blk| {
+    for (dir_inode.block, 0..) |blk, idx| {
         if (blk == 0) continue;
-        var offset = self.block_offset(blk);
-        const block_end_offset = offset + self.block_size;
-        while (offset < block_end_offset) {
-            try self.reader.seek_to(offset);
-            const entry = try DirEntry.init(self.gpa, &self.reader);
-            errdefer entry.deinit(self.gpa);
-            if (entry.inode_id == 0) {
-                entry.deinit(self.gpa);
-            } else if (!with_dot_dirs and (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, ".."))) {
-                entry.deinit(self.gpa);
-            } else {
-                try entries.append(entry);
+
+        if (idx < 12) {
+            var offset = self.block_offset(blk);
+            const block_end_offset = offset + self.block_size;
+            while (offset < block_end_offset) {
+                try self.reader.seek_to(offset);
+                const entry = try DirEntry.init(self.gpa, &self.reader);
+                errdefer entry.deinit(self.gpa);
+                if (entry.inode_id == 0) {
+                    entry.deinit(self.gpa);
+                } else if (!with_dot_dirs and (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, ".."))) {
+                    entry.deinit(self.gpa);
+                } else {
+                    try entries.append(entry);
+                }
+                offset += entry.rec_len;
             }
-            offset += entry.rec_len;
         }
+        // else if (idx == 12) { try self.read_dir_entries_singly_indirect(dir_inode, &entries, with_dot_dirs); }
+        // else if (idx == 13) { try self.read_dir_entries_doubly_indirect(dir_inode, &entries, with_dot_dirs); }
+        // else if (idx == 14) { try self.read_dir_entries_triply_indirect(dir_inode, &entries, with_dot_dirs); }
     }
 
     return entries.toOwnedSlice();
 }
+
+// // TODO: start here, finish doing this and then try to read a really big file from disk,
+// // dont forget that DirEntry.block are pointers to data for entries that are different from directory file_type
+// fn read_dir_entries_singly_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
+//     const first_block_id = dir_inode.block[12];
+//
+// }
+//
+// fn read_dir_entries_doubly_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
+//
+// }
+//
+// fn read_dir_entries_triply_indirect(self: *EXT2, dir_inode: Inode, entries: *EntriesList,  with_dot_dirs: bool) !void {
+//
+// }
 
 /// Caller owns and must free the returned memory.
 fn read_dir_entries_recursively_for_inode_id(self: *EXT2, inode_id: u32) ![]DirEntry {
@@ -1017,12 +1040,12 @@ fn read_dir_entries_recursively_for_inode_id(self: *EXT2, inode_id: u32) ![]DirE
     if (!inode.is_dir()) return try self.gpa.alloc(DirEntry, 0);
 
     const root_entries = try self.read_dir_entries_with_inode_dot_dirs(inode, false);
-    var entries = std.ArrayList(DirEntry).fromOwnedSlice(self.gpa, root_entries);
+    var entries = EntriesList.fromOwnedSlice(self.gpa, root_entries);
     errdefer entries.deinit();
 
     var last_loop_entries = entries.items;
     while (dir_entries_contain_directory(last_loop_entries)) {
-        var loop_entries = std.ArrayList(DirEntry).init(self.gpa);
+        var loop_entries = EntriesList.init(self.gpa);
         errdefer for (loop_entries.items) |e| e.deinit(self.gpa);
         errdefer loop_entries.deinit();
 
@@ -1061,6 +1084,121 @@ fn count_bits_on(bytes: []u8) u32 {
     return count;
 }
 
+/// Reads the data of a file from its inode.
+/// Caller owns the returned memory and must free it.
+pub fn read_file_data(self: *EXT2, inode_id: u32) ![]u8 {
+    const inode = try self.get_inode(inode_id);
+    return try self.read_file_data_from_inode(inode);
+}
+
+/// Reads the data of a file from its inode.
+/// Caller owns the returned memory and must free it.
+pub fn read_file_data_from_inode(self: *EXT2, inode: Inode) ![]u8 {
+    if (inode.is_dir()) return error.IsDirectory;
+    if (inode.size == 0) return try self.gpa.alloc(u8, 0);
+
+    const data = try self.gpa.alloc(u8, inode.size);
+    errdefer self.gpa.free(data);
+
+    var bytes_read: u32 = 0;
+    const max_direct_blocks = 12;
+
+    for (inode.block[0..max_direct_blocks]) |block_id| {
+        if (block_id == 0 or bytes_read >= inode.size) break;
+        try self.read_data_block(block_id, data, &bytes_read);
+    }
+
+    if (bytes_read < inode.size and inode.block[12] != 0) {
+        try self.read_indirect_blocks(inode.block[12], data, &bytes_read);
+    }
+
+    if (bytes_read < inode.size and inode.block[13] != 0) {
+        try self.read_double_indirect_blocks(inode.block[13], data, &bytes_read);
+    }
+
+    if (bytes_read < inode.size and inode.block[14] != 0) {
+        try self.read_triple_indirect_blocks(inode.block[14], data, &bytes_read);
+    }
+
+    if (bytes_read < inode.size) {
+        return try self.gpa.realloc(data, bytes_read);
+    }
+
+    return data;
+}
+
+/// Reads data from a single block into the buffer.
+fn read_data_block(self: *EXT2, block_id: u32, buffer: []u8, bytes_read: *u32) !void {
+    if (block_id == 0) return;
+
+    if (bytes_read.* >= buffer.len) return;
+
+    const offset = self.block_offset(block_id);
+    try self.reader.seek_to(offset);
+
+    const remain_in_buffer: u32 = @intCast(buffer.len - bytes_read.*);
+    const to_read = @min(remain_in_buffer, self.block_size);
+
+    const read = try self.reader.read(buffer[bytes_read.*..][0..to_read]);
+    bytes_read.* += @intCast(read);
+}
+
+/// Reads data from indirect blocks into the buffer.
+fn read_indirect_blocks(self: *EXT2, indirect_block_id: u32, buffer: []u8, bytes_read: *u32) !void {
+    if (indirect_block_id == 0 or bytes_read.* >= buffer.len) return;
+
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const indirect_offset = self.block_offset(indirect_block_id);
+    try self.reader.seek_to(indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |block_id| {
+        if (block_id == 0 or bytes_read.* >= buffer.len) break;
+        try self.read_data_block(block_id, buffer, bytes_read);
+    }
+}
+
+/// Reads data from double indirect blocks into the buffer.
+fn read_double_indirect_blocks(self: *EXT2, double_indirect_block_id: u32, buffer: []u8, bytes_read: *u32) !void {
+    if (double_indirect_block_id == 0 or bytes_read.* >= buffer.len) return;
+
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const double_indirect_offset = self.block_offset(double_indirect_block_id);
+    try self.reader.seek_to(double_indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |indirect_block_id| {
+        if (indirect_block_id == 0 or bytes_read.* >= buffer.len) break;
+        try self.read_indirect_blocks(indirect_block_id, buffer, bytes_read);
+    }
+}
+
+/// Reads data from triple indirect blocks into the buffer.
+fn read_triple_indirect_blocks(self: *EXT2, triple_indirect_block_id: u32, buffer: []u8, bytes_read: *u32) !void {
+    if (triple_indirect_block_id == 0 or bytes_read.* >= buffer.len) return;
+
+    const block_ptrs_per_block = self.block_size / @sizeOf(u32);
+    const block_ptrs = try self.gpa.alloc(u32, block_ptrs_per_block);
+    defer self.gpa.free(block_ptrs);
+
+    const triple_indirect_offset = self.block_offset(triple_indirect_block_id);
+    try self.reader.seek_to(triple_indirect_offset);
+    const bytes = @as([*]u8, @ptrCast(block_ptrs.ptr))[0..block_ptrs.len * @sizeOf(u32)];
+    _ = try self.reader.read(bytes);
+
+    for (block_ptrs) |double_indirect_block_id| {
+        if (double_indirect_block_id == 0 or bytes_read.* >= buffer.len) break;
+        try self.read_double_indirect_blocks(double_indirect_block_id, buffer, bytes_read);
+    }
+}
 
 test {
     std.testing.refAllDecls(Tests);
@@ -1235,6 +1373,44 @@ const Tests = struct {
         };
         for (expected_names, all_entries) |expected_name, entry| {
             try t.expectEqualSlices(u8, expected_name, entry.name);
+        }
+    }
+
+    test "read file data from ext2" {
+        var ext2 = try create_ext2();
+        defer ext2.deinit();
+
+        const all_entries = try ext2.read_dir_entries_recursively_for_inode_id(ROOT_INODE);
+        defer DirEntry.free_entries(ext2.gpa, all_entries);
+
+        var jpg_file_entry: ?DirEntry = null;
+        for (all_entries) |entry| if (std.mem.eql(u8, entry.name, "example1.jpg")) {
+            jpg_file_entry = entry;
+            break;
+        };
+
+        try t.expect(jpg_file_entry != null);
+        const file_inode_id = jpg_file_entry.?.inode_id;
+
+        const file_data = try ext2.read_file_data(file_inode_id);
+        defer ext2.gpa.free(file_data);
+
+        try t.expectEqualSlices(u8, file_data[0..3], &[3]u8{ 0xFF, 0xD8, 0xFF });
+
+        const original_file = try std.fs.cwd().openFile("input/jpgs/example1.jpg", .{});
+        defer original_file.close();
+
+        const expected_data = try original_file.reader().readAllAlloc(ext2.gpa, file_data.len);
+        defer ext2.gpa.free(expected_data);
+
+        try t.expectEqualSlices(u8, expected_data, file_data);
+
+        if (t.log_level == .debug) {
+            const output_path = "output/test_read_ext2_file.jpg";
+            const f = try std.fs.cwd().createFile(output_path, .{});
+            defer f.close();
+            try f.writer().writeAll(file_data);
+            tlog.debug("Wrote file to {s}, size: {d} bytes", .{output_path, file_data.len});
         }
     }
 };
