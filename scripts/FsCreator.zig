@@ -15,37 +15,42 @@ pub fn init(fs_type: FSType, alloc: std.mem.Allocator) Self {
     };
     creator.alloc = alloc;
     creator.cwd = std.fs.cwd();
+    creator.fs_type = fs_type;
     return creator;
 }
 
 const ext2_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
+    .fs_type = undefined,
     .path = "filesystems/ext2_filesystem.img",
-    .fs_type = "ext2",
+    .fs_type_str = "ext2",
     .size = 1000,
 };
 
 const fat32_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
+    .fs_type = undefined,
     .path = "filesystems/fat32_filesystem.img",
-    .fs_type = "vfat",
+    .fs_type_str = "vfat",
     .size = 1000,
 };
 
 const ntfs_creator: Self = .{
     .alloc = undefined,
     .cwd = undefined,
+    .fs_type = undefined,
     .path = "filesystems/ntfs_filesystem.img",
-    .fs_type = "ntfs",
+    .fs_type_str = "ntfs",
     .size = 200,
 };
 
 alloc: std.mem.Allocator,
 cwd: std.fs.Dir,
 path: []const u8,
-fs_type: []const u8,
+fs_type: FSType,
+fs_type_str: []const u8,
 /// in Megabytes.
 size: usize,
 
@@ -103,6 +108,22 @@ pub fn truncate(self: Self) !void {
 }
 
 pub fn mkfs(self: Self) !void {
+    if (self.fs_type == .ntfs) {
+        const res = try std.process.Child.run(
+            .{
+                .allocator = self.alloc,
+                .cwd_dir = self.cwd,
+                .argv = &.{
+                    "sudo",
+                    "mkntfs",
+                    "-F",
+                    self.path,
+                }
+            }
+        );
+        handle_res(res);
+        return;
+    }
     const res = try std.process.Child.run(
         .{
             .allocator = self.alloc,
@@ -111,7 +132,7 @@ pub fn mkfs(self: Self) !void {
                 "sudo",
                 "mkfs",
                 "-t",
-                self.fs_type,
+                self.fs_type_str,
                 self.path,
             }
         }
@@ -142,7 +163,7 @@ pub fn mount(self: Self) !void {
                 "-o",
                 "loop",
                 "-t",
-                self.fs_type,
+                self.fs_type_str,
                 self.path,
                 "mnt",
             }

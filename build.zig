@@ -209,12 +209,41 @@ fn create_filesystems_step(b: *std.Build) !*std.Build.Step {
     const fs_dir_doesnt_exist = std.fs.cwd().openDir("./filesystems", .{}) == error.FileNotFound;
 
     if (fs_dir_doesnt_exist) {
-        // TODO: figure out if its possible to create a compilation step with an imported
-        // zig function
-        try @import("scripts/create_test_ext2_filesystem.zig").main();
-        // const create_ext2 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_ext2_filesystem.zig" });
-        try @import("scripts/create_test_fat32_filesystem.zig").main();
-        // const create_fat32 = b.addSystemCommand(&.{ "zig", "run", "scripts/create_test_fat32_filesystem.zig" });
+        const mkdir_fs = b.addSystemCommand(&.{"mkdir", "-p", "./filesystems"});
+        create.dependOn(&mkdir_fs.step);
+
+        const ext2_creator = b.addExecutable(.{
+            .name = "create_test_ext2_filesystem",
+            .root_source_file = b.path("scripts/create_test_ext2_filesystem.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        const run_ext2_creator = b.addRunArtifact(ext2_creator);
+        run_ext2_creator.step.dependOn(&mkdir_fs.step);
+        create.dependOn(&run_ext2_creator.step);
+
+        const fat32_creator = b.addExecutable(.{
+            .name = "create_test_fat32_filesystem",
+            .root_source_file = b.path("scripts/create_test_fat32_filesystem.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        const run_fat32_creator = b.addRunArtifact(fat32_creator);
+        run_fat32_creator.step.dependOn(&mkdir_fs.step);
+        create.dependOn(&run_fat32_creator.step);
+
+        const ntfs_creator = b.addExecutable(.{
+            .name = "create_test_ntfs_filesystem",
+            .root_source_file = b.path("scripts/create_test_ntfs_filesystem.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        const run_ntfs_creator = b.addRunArtifact(ntfs_creator);
+        run_ntfs_creator.step.dependOn(&mkdir_fs.step);
+        create.dependOn(&run_ntfs_creator.step);
     }
 
     return create;
