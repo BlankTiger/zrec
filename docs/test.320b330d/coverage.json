@@ -1,0 +1,23 @@
+{
+  "files": [
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/testing_utils.zig", "percent_covered": "89.74", "covered_lines": "35", "total_lines": "39"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/testing_utils.zig", "percent_covered": "100.00", "covered_lines": "18", "total_lines": "18"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/NTFS.zig", "percent_covered": "33.33", "covered_lines": "2", "total_lines": "6"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/EXT2.zig", "percent_covered": "78.72", "covered_lines": "381", "total_lines": "484"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/FAT.zig", "percent_covered": "95.35", "covered_lines": "82", "total_lines": "86"},
+    {"file": "/home/runner/work/zrec/zrec/src/utils.zig", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"},
+    {"file": "/home/runner/work/zrec/zrec/src/printer.zig", "percent_covered": "100.00", "covered_lines": "49", "total_lines": "49"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/png.zig", "percent_covered": "88.24", "covered_lines": "120", "total_lines": "136"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/jpg.zig", "percent_covered": "94.74", "covered_lines": "126", "total_lines": "133"},
+    {"file": "/home/runner/work/zrec/zrec/src/reader.zig", "percent_covered": "96.18", "covered_lines": "151", "total_lines": "157"},
+    {"file": "/home/runner/work/zrec/zrec/src/FilesystemHandler.zig", "percent_covered": "93.75", "covered_lines": "60", "total_lines": "64"},
+    {"file": "/home/runner/work/zrec/zrec/src/lib.zig", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"}
+  ],
+  "percent_covered": "87.41",
+  "covered_lines": 1028,
+  "total_lines": 1176,
+  "percent_low": 25,
+  "percent_high": 75,
+  "command": "test",
+  "date": "2025-02-26 20:00:27"
+}
