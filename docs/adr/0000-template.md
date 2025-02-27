@@ -1,9 +1,8 @@
-# ADR N: [Decision Title]
+# ADR <idx>: <title>
 
 ## Status
 - [Proposed/Accepted/Deprecated/Superseded]
-- Last Updated: [Date]
-- Decider(s): [Names/Roles]
+- Last Updated: <date>
 
 ## Context
 - Technical background
