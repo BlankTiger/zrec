@@ -1,6 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+const log = std.log.scoped(.adr_manager);
+
+const TEMPLATE = @embedFile("../docs/adr/0000-template.md");
 
 pub fn main() !void {
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
