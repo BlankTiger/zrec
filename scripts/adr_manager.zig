@@ -148,6 +148,16 @@ fn parse_placeholders(alloc: Allocator, args: []const [:0]u8) !std.StringHashMap
 fn list_ADRs(arena: Allocator, args: []const [:0]u8) !void {
     _ = arena;
     _ = args;
+    const cwd = std.fs.cwd();
+    var dir_iter = (try cwd.openDir(ADR_PATH, .{ .iterate = true })).iterate();
+    while (try dir_iter.next()) |e| {
+        if (std.mem.eql(u8, e.name, "README.md")) continue;
+        // TODO: print additional info too
+        // const f_path = try std.fmt.allocPrint(arena, "{s}{s}", .{ADR_PATH, e.name});
+        // const f = try cwd.openFile(f_path, .{});
+        // defer f.close();
+        std.debug.print("{s}\n", .{e.name});
+    }
 }
 
 fn update_ADR_status(arena: Allocator, args: []const [:0]u8) !void {
