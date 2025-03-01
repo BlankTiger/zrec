@@ -807,6 +807,12 @@ n_groups: u32,
 block_size: u32,
 is_sparse: bool,
 
+pub fn estimate(alloc: Allocator, reader: *Reader) f32 {
+    _ = alloc;
+    _ = reader;
+    return 0;
+}
+
 pub fn init(gpa: Allocator, reader: *Reader) Error!EXT2 {
     const superblock = try parse_superblock(gpa, reader);
     errdefer gpa.destroy(superblock);
@@ -1416,7 +1422,7 @@ const Tests = struct {
         }
     }
 
-    test "RUN read directory entries with indirect blocks" {
+    test "read directory entries with indirect blocks" {
         t.log_level = .debug;
 
         var ext2 = try create_ext2();

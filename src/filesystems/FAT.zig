@@ -271,6 +271,12 @@ pub const Error =
         TooLittleMemoryPassedForBIOSParamBlockParsing,
     };
 
+pub fn estimate(alloc: Allocator, reader: *Reader) f32 {
+    _ = alloc;
+    _ = reader;
+    return 0;
+}
+
 pub fn init(gpa: Allocator, reader: *Reader) Error!Self {
     const buf = try gpa.alloc(u8, 10000);
     errdefer gpa.free(buf);

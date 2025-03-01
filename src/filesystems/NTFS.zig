@@ -15,6 +15,12 @@ pub const Error =
     || std.fs.File.ReadError
     || error{ NotNTFS, InvalidJmpBoot, UnimplementedCurrently };
 
+pub fn estimate(alloc: Allocator, reader: *Reader) f32 {
+    _ = alloc;
+    _ = reader;
+    return 0;
+}
+
 pub fn init(alloc: Allocator, reader: *Reader) Error!Self {
     _ = alloc;
     _ = reader;

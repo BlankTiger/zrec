@@ -71,6 +71,7 @@ pub const ReadReader = struct {
 //     }
 // }
 
+// TODO: implement the std io reader interface to get a lot of functionality for free
 pub const MmapReader = struct {
     pub const MemT = []align(std.heap.pageSize()) u8;
 

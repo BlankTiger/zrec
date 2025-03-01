@@ -3,8 +3,10 @@ const filetypes = @import("filetypes.zig");
 const reader = @import("reader.zig");
 const printer = @import("printer.zig");
 const utils = @import("utils.zig");
+const filesystem = @import("filesystem.zig");
 pub const FilesystemHandler = @import("FilesystemHandler.zig");
 
+pub const Filesystem = filesystem.Filesystem;
 pub const ReadReader = reader.ReadReader;
 pub const MmapReader = reader.MmapReader;
 /// Choice of Reader over the application and tests is made here
