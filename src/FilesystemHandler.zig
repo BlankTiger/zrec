@@ -2,15 +2,14 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const lib = @import("lib.zig");
 const Reader = lib.Reader;
+const log = std.log.scoped(.filesystems);
 const FAT32 = @import("filesystems/FAT.zig");
 const NTFS = @import("filesystems/NTFS.zig");
 const EXT2 = @import("filesystems/EXT2.zig");
-const log = std.log.scoped(.filesystems);
+const Filesystem = @import("filesystem.zig").Filesystem;
 
 const Error =
-    FAT32.Error
-    || EXT2.Error
-    || NTFS.Error
+    Filesystem.Error
     || Allocator.Error
     || std.fs.File.ReadError
     || std.fs.File.OpenError
@@ -55,33 +54,6 @@ pub fn update_path(self: *FsHandler, new_path: []const u8) Allocator.Error!void 
     self.alloc.free(self.path);
     self.path = try self.alloc.dupe(u8, new_path);
 }
-
-pub const Filesystem = union(enum) {
-    fat32: FAT32,
-    ntfs: NTFS,
-    ext2: EXT2,
-    // ext3: EXT3,
-    // ext4: EXT4,
-
-    pub fn deinit(self: *Filesystem) void {
-        switch (self.*) { inline else => |*it| it.deinit() }
-        self.* = undefined;
-    }
-
-    pub fn name(self: Filesystem) [:0]const u8 {
-        return @tagName(self);
-    }
-
-    /// Returns size of the filesystem in bytes.
-    pub fn get_size(self: Filesystem) f64 {
-        return switch (self) { inline else => |*it| it.get_size() };
-    }
-
-    /// Returns free size of the filesystem in bytes.
-    pub fn get_free_size(self: Filesystem) f64 {
-        return switch (self) { inline else => |*it| it.get_free_size() };
-    }
-};
 
 /// Caller must call deinit on the resulting Filesystem
 pub fn determine_filesystem(self: *FsHandler) Error!Filesystem {
