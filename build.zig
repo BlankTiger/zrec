@@ -161,9 +161,7 @@ fn test_step(
             .filters = filters,
         });
 
-        const test_options = b.addOptions();
-        test_options.addOption(bool, "skip_slow_tests", skip_slow_tests);
-
+        const test_options = create_test_options(b, skip_slow_tests);
         exe_unit_tests.root_module.addOptions("test_config", test_options);
 
         const mod = b.createModule(.{
@@ -189,6 +187,12 @@ fn test_step(
     }
 
     return step;
+}
+
+fn create_test_options(b: *std.Build, skip_slow_tests: bool) *std.Build.Step.Options {
+    const test_options = b.addOptions();
+    test_options.addOption(bool, "skip_slow_tests", skip_slow_tests);
+    return test_options;
 }
 
 fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {

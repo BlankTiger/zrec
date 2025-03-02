@@ -53,6 +53,7 @@ test {
 
 const Tests = struct {
     const t_alloc = std.testing.allocator;
+    const t = std.testing;
 
     const PATH = "./filesystems/ext2_filesystem.img";
 
@@ -65,7 +66,8 @@ const Tests = struct {
         var reader = try create_new_reader();
         defer reader.deinit();
         const estimation = Filesystem.estimate(t_alloc, &reader);
-        lib.print(estimation);
-        lib.print(estimation.get(.ext2));
+        try t.expectEqual(0, estimation.get(.ext2));
+        try t.expectEqual(0, estimation.get(.ntfs));
+        try t.expectEqual(0, estimation.get(.fat32));
     }
 };
