@@ -1423,6 +1423,7 @@ const Tests = struct {
         }
     }
 
+    // TODO:fix zig build test-kcov for this test, for some reason running this test with kcov doesn't create test files in correct directories while zig build test-all works normally
     test "read directory entries with indirect blocks" {
         try project_t_utils.skip_slow_test();
 
@@ -1444,12 +1445,14 @@ const Tests = struct {
 
         var dir_inode_id: u32 = 0;
         for (root_entries) |entry| {
+            tlog.warn("{s}", .{entry.name});
             if (std.mem.eql(u8, entry.name, many_files_dir)) {
                 dir_inode_id = entry.inode_id;
                 break;
             }
         }
 
+        tlog.warn("{d}", .{dir_inode_id});
         if (dir_inode_id == 0) {
             tlog.warn("Skipping test: couldn't find test directory", .{});
             return;
