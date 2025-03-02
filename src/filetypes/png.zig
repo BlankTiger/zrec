@@ -150,6 +150,7 @@ const Tests = struct {
     const t_alloc = t.allocator;
     const FsHandler = lib.FilesystemHandler;
     const utils = @import("testing_utils.zig");
+    const proj_t_utils = @import("../testing_utils.zig");
     const testing_fs_handler = utils.testing_fs_handler;
     const hash = utils.hash;
     const Hashes = utils.Hashes;
@@ -189,6 +190,8 @@ const Tests = struct {
     };
 
     test "pngs read straight from the disk are interpreted via reader as the same imgs" {
+        try proj_t_utils.skip_slow_test();
+
         inline for (TestExample.paths) |p| {
             tlog.debug("file: {s}", .{p});
             var orig_mem_data: []u8 = undefined;
@@ -215,6 +218,8 @@ const Tests = struct {
     }
 
     test "recovered pngs have correct start and end bytes" {
+        try proj_t_utils.skip_slow_test();
+
         var fs_handler = try testing_fs_handler();
         defer fs_handler.deinit();
         const reader = try fs_handler.create_new_reader();
@@ -227,6 +232,8 @@ const Tests = struct {
     }
 
     test "recover png from fat32, verify using sha1" {
+        try proj_t_utils.skip_slow_test();
+
         var hashes = try TestExample.hashes();
         defer cleanup_hashes(&hashes);
         var fs_handler = try testing_fs_handler();

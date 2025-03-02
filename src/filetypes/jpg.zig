@@ -31,7 +31,7 @@ pub const JPGRecoverer = struct {
     alloc: Allocator,
     reader: Reader,
     // /// directions on how to navigate the given reader
-    // /// example: 
+    // /// example:
     // reader_map: ?*const ReaderMap = null,
     max_size: usize = 20e6,
     stride: usize = 512,
@@ -149,6 +149,7 @@ const Tests = struct {
     const t_alloc = t.allocator;
     const FsHandler = lib.FilesystemHandler;
     const utils = @import("testing_utils.zig");
+    const proj_t_utils = @import("../testing_utils.zig");
     const testing_fs_handler = utils.testing_fs_handler;
     const testing_original_data = utils.testing_original_data;
     const hash = utils.hash;
@@ -186,6 +187,8 @@ const Tests = struct {
     };
 
     test "jpgs read straight from the disk are interpreted via reader as the same imgs" {
+        try proj_t_utils.skip_slow_test();
+
         inline for (TestExample.paths) |p| {
             tlog.debug("file: {s}", .{p});
             var orig_mem_data: []u8 = undefined;
@@ -222,6 +225,8 @@ const Tests = struct {
     }
 
     test "recover jpg from fat32, verify using sha1" {
+        try proj_t_utils.skip_slow_test();
+
         var hashes = try TestExample.hashes();
         defer cleanup_hashes(&hashes);
         var fs_handler = try testing_fs_handler();

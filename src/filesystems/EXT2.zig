@@ -1253,6 +1253,7 @@ test {
 const Tests = struct {
     const FilesystemHandler = lib.FilesystemHandler;
     const utils = @import("testing_utils.zig");
+    const project_t_utils = @import("../testing_utils.zig");
     const EXT2_PATH = "./filesystems/ext2_filesystem.img";
     const t = std.testing;
     const t_alloc = t.allocator;
@@ -1423,6 +1424,8 @@ const Tests = struct {
     }
 
     test "read directory entries with indirect blocks" {
+        try project_t_utils.skip_slow_test();
+
         t.log_level = .debug;
 
         var ext2 = try create_ext2();

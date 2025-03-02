@@ -104,7 +104,11 @@ fn print_with_writer(writer: anytype, x: anytype, options: ?*Opts) void {
     }
 }
 
+const t_utils = @import("testing_utils.zig");
+
 test print {
+    try t_utils.skip_slow_test();
+
     const E = enum { a, b, c, d };
 
     const C = struct {

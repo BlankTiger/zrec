@@ -14,7 +14,20 @@ pub fn build(b: *std.Build) !void {
     clean_all_step(b);
     const clean = clean_step(b);
     const create_fs = try create_filesystems_step(b);
-    test_step(b, clean, create_fs);
+
+    const filters: []const []const u8 =
+        b.option([]const []const u8, "test-filter", "Only run tests matching this") orelse &.{};
+    const only_prepare_env: bool =
+        b.option(bool, "only-prepare-env", "Only prepare environment for test running") orelse false;
+
+    const test_s = test_step(b, "test", "Run unit tests (only fast tests)", true, filters, only_prepare_env);
+    test_s.dependOn(clean);
+    test_s.dependOn(create_fs);
+
+    const all_test_s = test_step(b, "test-all", "Run all unit tests including slow ones", false, filters, only_prepare_env);
+    all_test_s.dependOn(clean);
+    all_test_s.dependOn(create_fs);
+
     bench_step(b, clean, create_fs);
     docs_step(b);
     try build_and_run_step(b);
@@ -131,40 +144,51 @@ fn build_and_run_step(b: *std.Build) !void {
     run.dependOn(&run_cmd.step);
 }
 
-fn test_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {
-    const filters: []const []const u8 =
-        b.option([]const []const u8, "test-filter", "Only run tests matching this") orelse &.{};
-    const only_prepare_env: bool =
-        b.option(bool, "only-prepare-env", "Only prepare environment for test running") orelse false;
-    const test_s = b.step("test", "Run unit tests");
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .filters = filters,
-    });
-    const mod = b.createModule(.{
-        .root_source_file = b.path("src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    exe_unit_tests.root_module.addImport("zrec", mod);
-    const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-        .filters = filters,
-    });
-    test_s.dependOn(clean);
-    test_s.dependOn(create_fs);
+fn test_step(
+    b: *std.Build,
+    name: []const u8,
+    description: []const u8,
+    skip_slow_tests: bool,
+    filters: []const []const u8, only_prepare_env: bool
+) *std.Build.Step {
+    const step = b.step(name, description);
 
     if (!only_prepare_env) {
+        const exe_unit_tests = b.addTest(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .filters = filters,
+        });
+
+        const test_options = b.addOptions();
+        test_options.addOption(bool, "skip_slow_tests", skip_slow_tests);
+
+        exe_unit_tests.root_module.addOptions("test_config", test_options);
+
+        const mod = b.createModule(.{
+            .root_source_file = b.path("src/lib.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        exe_unit_tests.root_module.addImport("zrec", mod);
+
+        const lib_unit_tests = b.addTest(.{
+            .root_source_file = b.path("src/lib.zig"),
+            .target = target,
+            .optimize = optimize,
+            .filters = filters,
+        });
+        lib_unit_tests.root_module.addOptions("test_config", test_options);
+
         const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
         const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
-        test_s.dependOn(&run_exe_unit_tests.step);
-        test_s.dependOn(&run_lib_unit_tests.step);
+        step.dependOn(&run_exe_unit_tests.step);
+        step.dependOn(&run_lib_unit_tests.step);
     }
+
+    return step;
 }
 
 fn bench_step(b: *std.Build, clean: *std.Build.Step, create_fs: *std.Build.Step) void {

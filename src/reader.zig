@@ -159,8 +159,11 @@ test {
 
 const Tests = struct {
     const t = std.testing;
+    const t_utils = @import("testing_utils.zig");
 
     test "MmapReader read full fat32 image, result should be equivalent to reading via read system calls, seeking works too" {
+        try t_utils.skip_slow_test();
+
         const path = "filesystems/fat32_filesystem.img";
         var read_call_buf: [512]u8 = undefined;
         var mmap_call_buf: [512]u8 = undefined;
