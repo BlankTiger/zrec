@@ -16,16 +16,17 @@ jobs:
 
       - name: Build kcov
         run: |
+          sudo apt-get update -y
           sudo apt-get install -y binutils-dev libssl-dev libcurl4-openssl-dev libelf-dev libstdc++-12-dev zlib1g-dev libdw-dev libiberty-dev
           git clone --depth 1 https://github.com/SimonKagstrom/kcov
-          cd kcov && mkdir build && cd build && cmake .. && make && sudo make install
+          cd kcov && git fetch --depth 1 origin c71d42f1cadddbd2da38c1101d71ef2b84065c7b && git checkout c71d42f1cadddbd2da38c1101d71ef2b84065c7b && mkdir build && cd build && cmake .. && make && sudo make install
 
       - name: Run tests and get coverage
         id: test-stats
         run: |
-          zig build test -Donly-prepare-env
           # Run tests with kcov, ignore exit code to ensure coverage output
-          zig test src/lib.zig --test-cmd kcov --test-cmd "--include-path=./src" --test-cmd docs --test-cmd-bin 2>&1 || true
+          zig build test-kcov 2>&1 || true
+
           # Find the latest coverage.json in docs/test* and extract percent_covered
           COVERAGE_FILE=$(find docs/test* -name "coverage.json" -print0 | xargs -0 ls -t | head -n 1)
           if [ -f "$COVERAGE_FILE" ]; then

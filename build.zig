@@ -17,16 +17,18 @@ pub fn build(b: *std.Build) !void {
 
     const filters: []const []const u8 =
         b.option([]const []const u8, "test-filter", "Only run tests matching this") orelse &.{};
-    const only_prepare_env: bool =
-        b.option(bool, "only-prepare-env", "Only prepare environment for test running") orelse false;
 
-    const test_s = test_step(b, "test", "Run unit tests (only fast tests)", true, filters, only_prepare_env);
+    const test_s = test_step(b, "test", "Run unit tests (only fast tests)", true, false, filters);
     test_s.dependOn(clean);
     test_s.dependOn(create_fs);
 
-    const all_test_s = test_step(b, "test-all", "Run all unit tests including slow ones", false, filters, only_prepare_env);
+    const all_test_s = test_step(b, "test-all", "Run all unit tests including slow ones", false, false, filters);
     all_test_s.dependOn(clean);
     all_test_s.dependOn(create_fs);
+
+    const kcov_test_s = test_step(b, "test-kcov", "Run all unit tests with kcov", false, true, filters);
+    kcov_test_s.dependOn(clean);
+    kcov_test_s.dependOn(create_fs);
 
     bench_step(b, clean, create_fs);
     docs_step(b);
@@ -149,42 +151,52 @@ fn test_step(
     name: []const u8,
     description: []const u8,
     skip_slow_tests: bool,
-    filters: []const []const u8, only_prepare_env: bool
+    kcov: bool,
+    filters: []const []const u8,
 ) *std.Build.Step {
     const step = b.step(name, description);
 
-    if (!only_prepare_env) {
-        const exe_unit_tests = b.addTest(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-            .filters = filters,
-        });
+    const exe_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = filters,
+    });
+    if (kcov) exe_unit_tests.setExecCmd(&.{
+        "kcov",
+        "--include-path=./src",
+        "docs",
+        null,
+    });
 
-        const test_options = create_test_options(b, skip_slow_tests);
-        exe_unit_tests.root_module.addOptions("test_config", test_options);
+    const test_options = create_test_options(b, skip_slow_tests);
+    exe_unit_tests.root_module.addOptions("test_config", test_options);
 
-        const mod = b.createModule(.{
-            .root_source_file = b.path("src/lib.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        exe_unit_tests.root_module.addImport("zrec", mod);
+    const mod = b.createModule(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_unit_tests.root_module.addImport("zrec", mod);
 
-        const lib_unit_tests = b.addTest(.{
-            .root_source_file = b.path("src/lib.zig"),
-            .target = target,
-            .optimize = optimize,
-            .filters = filters,
-        });
-        lib_unit_tests.root_module.addOptions("test_config", test_options);
+    const lib_unit_tests = b.addTest(.{
+        .root_source_file = b.path("src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+        .filters = filters,
+    });
+    lib_unit_tests.root_module.addOptions("test_config", test_options);
+    if (kcov) lib_unit_tests.setExecCmd(&.{
+        "kcov",
+        "docs",
+        null,
+    });
 
-        const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-        const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
-        step.dependOn(&run_exe_unit_tests.step);
-        step.dependOn(&run_lib_unit_tests.step);
-    }
+    step.dependOn(&run_exe_unit_tests.step);
+    step.dependOn(&run_lib_unit_tests.step);
 
     return step;
 }

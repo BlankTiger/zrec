@@ -14,7 +14,7 @@ jobs:
         id: test-stats
         run: |
           # Run zig build test with summary, capture output
-          TEST_OUTPUT=$(zig build test --summary all 2>&1 || true)
+          TEST_OUTPUT=$(zig build test-all --summary all 2>&1 || true)
           echo "$TEST_OUTPUT" # Log for debugging
           # Parse passed count from "X/Y tests passed" or "X/Y passed"
           PASSED=$(echo "$TEST_OUTPUT" | grep -oP '\d+(?=/\d+\s*(tests )?passed)' | tail -n 1 || echo 0)
