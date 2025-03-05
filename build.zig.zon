@@ -1,7 +1,9 @@
 .{
-    .name = "zrec",
+    .name = .zrec,
     .version = "0.0.0",
-    .dependencies = .{ 
+    // TODO: read about this field
+    .fingerprint = 0xbe828cda8efb6033,
+    .dependencies = .{
         .raylib = .{ .path = "./src/gui/raylib" },
     },
 
