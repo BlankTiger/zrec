@@ -122,7 +122,7 @@ const Tests = struct {
             fs_handler.errors.items,
             &[_]FsHandler.Error{
                 error.FileTooSmall,
-                error.UnimplementedCurrently,
+                error.ReadTooLittleForVBR,
                 error.NotEnoughReadToParseSuperblock,
             }
         );
