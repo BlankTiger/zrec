@@ -39,6 +39,7 @@ const VBR = extern struct {
     signature:                 u16     align(1),
 
     const SIGNATURE = 0x55AA;
+    const OEM_ID: [:0]const u8 = "NTFS    ";
     const Self = @This();
 
     pub fn init(reader: *Reader) !Self {
@@ -46,9 +47,11 @@ const VBR = extern struct {
         const dst = std.mem.asBytes(&self);
 
         try reader.seek_to(0);
-        const bytes_read = try reader.read(dst);
+        const bytes_read = try reader.read_struct_endian(VBR, &self, .little);
         if (bytes_read != dst.len) return error.ReadTooLittleForVBR;
-        if (self.signature != SIGNATURE) return error.NotNTFS;
+
+        if (self.signature != SIGNATURE)            return error.NotNTFSWrongSignature;
+        if (!std.mem.eql(u8, &self.oem_id, OEM_ID)) return error.NotNTFSBadOEM_ID;
 
         return self;
     }
@@ -57,7 +60,13 @@ const VBR = extern struct {
 pub const Error =
     Allocator.Error
     || std.fs.File.ReadError
-    || error{ NotNTFS, InvalidJmpBoot, UnimplementedCurrently, ReadTooLittleForVBR };
+    || error{
+        NotNTFSWrongSignature,
+        NotNTFSBadOEM_ID,
+        InvalidJmpBoot,
+        UnimplementedCurrently,
+        ReadTooLittleForVBR
+    };
 
 pub fn estimate(alloc: Allocator, reader: *Reader) f32 {
     _ = alloc;
@@ -109,9 +118,6 @@ const Tests = struct {
     }
 
     test "parsing VBR" {
-        // const offset = @bitOffsetOf(VBR, "signature");
-        const offset = @offsetOf(VBR, "signature");
-        std.debug.print("{d}\n", .{0x1fe - offset});
         var reader = try create_reader();
         defer reader.deinit();
 

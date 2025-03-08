@@ -107,11 +107,42 @@ pub const MmapReader = struct {
         if (!self.mem_shared) _ = posix.munmap(self.mem);
     }
 
+    pub fn read_struct_endian(self: *Self, T: anytype, dest: *T, endian: std.builtin.Endian) !usize {
+        const t_info = @typeInfo(T);
+        var read_bytes_count: usize = 0;
+        switch (t_info) {
+            .@"struct" => |s_info| {
+                const fields = s_info.fields;
+                inline for (fields) |f| {
+                    // only integers are byteswapped, [_]u8 fields stay the same
+                    const f_t_info = @typeInfo(f.type);
+                    switch (f_t_info) {
+                        .int, .float => {
+                            const dest_f = &@field(dest, f.name);
+                            const dst = std.mem.asBytes(dest_f);
+                            read_bytes_count += try self.read(dst);
+                            dest_f.* = if (endian == .little) @byteSwap(dest_f.*) else dest_f.*;
+                        },
+                        .array => |arr_info| {
+                            _ = arr_info;
+                            const arr_ptr = &@field(dest, f.name);
+                            const dst = std.mem.asBytes(arr_ptr);
+                            read_bytes_count += try self.read(dst);
+                        },
+                        else => unreachable,
+                    }
+                }
+            },
+            else => unreachable,
+        }
+        return read_bytes_count;
+    }
+
     pub fn read(self: *Self, dest: []u8) !usize {
         if (self.idx > self.mem.len) return 0;
 
-        if (self.mem.len < self.idx + dest.len) {
-            const bytes_left = self.mem.len - self.idx;
+        const bytes_left = self.mem.len - self.idx;
+        if (bytes_left < dest.len) {
             @memcpy(dest[0..bytes_left], self.mem[self.idx..self.idx+bytes_left]);
             self.idx += bytes_left;
             return bytes_left;
