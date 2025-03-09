@@ -188,6 +188,7 @@ fn test_step(
     lib_unit_tests.root_module.addOptions("test_config", test_options);
     if (kcov) lib_unit_tests.setExecCmd(&.{
         "kcov",
+        "--include-path=./src",
         "docs",
         null,
     });
