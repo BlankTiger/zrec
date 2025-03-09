@@ -1,0 +1,25 @@
+{
+  "files": [
+    {"file": "/home/runner/work/zrec/zrec/src/filesystem.zig", "percent_covered": "100.00", "covered_lines": "20", "total_lines": "20"},
+    {"file": "/home/runner/work/zrec/zrec/src/reader.zig", "percent_covered": "96.43", "covered_lines": "162", "total_lines": "168"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/jpg.zig", "percent_covered": "94.81", "covered_lines": "128", "total_lines": "135"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/png.zig", "percent_covered": "88.49", "covered_lines": "123", "total_lines": "139"},
+    {"file": "/home/runner/work/zrec/zrec/src/printer.zig", "percent_covered": "100.00", "covered_lines": "50", "total_lines": "50"},
+    {"file": "/home/runner/work/zrec/zrec/src/FilesystemHandler.zig", "percent_covered": "93.44", "covered_lines": "57", "total_lines": "61"},
+    {"file": "/home/runner/work/zrec/zrec/src/testing_utils.zig", "percent_covered": "100.00", "covered_lines": "4", "total_lines": "4"},
+    {"file": "/home/runner/work/zrec/zrec/src/lib.zig", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"},
+    {"file": "/home/runner/work/zrec/zrec/src/utils.zig", "percent_covered": "100.00", "covered_lines": "2", "total_lines": "2"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/testing_utils.zig", "percent_covered": "89.74", "covered_lines": "35", "total_lines": "39"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/FAT.zig", "percent_covered": "95.45", "covered_lines": "84", "total_lines": "88"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/EXT2.zig", "percent_covered": "78.89", "covered_lines": "385", "total_lines": "488"},
+    {"file": "/home/runner/work/zrec/zrec/src/filesystems/NTFS.zig", "percent_covered": "88.89", "covered_lines": "24", "total_lines": "27"},
+    {"file": "/home/runner/work/zrec/zrec/src/filetypes/testing_utils.zig", "percent_covered": "100.00", "covered_lines": "18", "total_lines": "18"}
+  ],
+  "percent_covered": "88.15",
+  "covered_lines": 1094,
+  "total_lines": 1241,
+  "percent_low": 25,
+  "percent_high": 75,
+  "command": "test",
+  "date": "2025-03-09 09:32:06"
+}
