@@ -1427,8 +1427,6 @@ const Tests = struct {
     test "read directory entries with indirect blocks" {
         try project_t_utils.skip_slow_test();
 
-        t.log_level = .debug;
-
         var ext2 = try create_ext2();
         defer ext2.deinit();
 
@@ -1445,14 +1443,14 @@ const Tests = struct {
 
         var dir_inode_id: u32 = 0;
         for (root_entries) |entry| {
-            tlog.warn("{s}", .{entry.name});
+            tlog.info("{s}", .{entry.name});
             if (std.mem.eql(u8, entry.name, many_files_dir)) {
                 dir_inode_id = entry.inode_id;
                 break;
             }
         }
 
-        tlog.warn("{d}", .{dir_inode_id});
+        tlog.info("dir_inode_id: {d}", .{dir_inode_id});
         if (dir_inode_id == 0) {
             tlog.warn("Skipping test: couldn't find test directory", .{});
             return;
